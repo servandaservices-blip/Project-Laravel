@@ -33,8 +33,10 @@ Route::middleware('guest')->group(function () {
 
 Route::middleware('auth')->group(function () {
     Route::get('/dashboard', function () {
-        return redirect()->route('dashboard.workday', ['company' => request('company', 'servanda')]);
+        return redirect()->route('dashboard.welcome');
     })->name('dashboard');
+    Route::get('/dashboard/welcome', [AttendanceSummaryController::class, 'welcome'])
+        ->name('dashboard.welcome');
     Route::get('/dashboard/hari-kerja', [AttendanceSummaryController::class, 'dashboardWorkday'])
         ->name('dashboard.workday');
     Route::get('/dashboard/attendance-area', [AttendanceSummaryController::class, 'dashboardAttendanceArea'])

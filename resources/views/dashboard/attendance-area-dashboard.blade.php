@@ -16,25 +16,31 @@
         $areaManagers = $areaManagers ?? collect();
         $operationManagers = $operationManagers ?? collect();
         $yearOptions = range((int) now()->year - 2, 2030);
-        $areaSummaryCards = $areaSummaryCards ?? [];
+        $dashboardFilterLabelClass = 'mb-2 block text-sm font-medium text-slate-700';
+        $dashboardFilterFieldClass = 'w-full rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm font-medium text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100';
     @endphp
 
     <section x-data="{ areaModalOpen: false, selectedArea: null, areaSearch: '' }" @keydown.escape.window="areaModalOpen = false" class="space-y-6">
-        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <section class="dashboard-card overflow-visible">
             <div class="max-w-3xl">
-                <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-700">Attendance Area Dashboard</p>
-                <h2 class="mt-2 text-3xl font-bold tracking-tight text-slate-900">Attendance Area {{ $companyName }}</h2>
+                <p class="dashboard-eyebrow">Attendance Area Dashboard</p>
+                <h2 class="text-2xl font-bold tracking-tight text-slate-900">Attendance Area {{ $companyName }}</h2>
                 <p class="mt-3 text-sm leading-7 text-slate-500">
                     Halaman ini difokuskan untuk membaca ringkasan attendance per area dan menelusuri employee yang berada di area terkait melalui popup detail.
                 </p>
             </div>
 
-            <form method="GET" action="{{ route('dashboard.attendance-area') }}" class="w-full xl:max-w-[1040px]">
-                <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
-                    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 xl:items-end">
+            <form method="GET" action="{{ route('dashboard.attendance-area') }}" class="relative mt-6">
+                <div class="employee-filter-card rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-blue-50/60 p-5 shadow-sm">
+                    <div
+                        @class([
+                            'grid gap-4 md:grid-cols-2 xl:grid-cols-4',
+                            '2xl:grid-cols-5' => $selectedCompany === 'servanda',
+                        ])
+                    >
                         <div>
-                            <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Nama PT</label>
-                            <select name="company" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                            <label class="{{ $dashboardFilterLabelClass }}">Nama PT</label>
+                            <select name="company" onchange="this.form.submit()" class="{{ $dashboardFilterFieldClass }}">
                                 @foreach ($companyOptions as $companyKey => $companyLabel)
                                     <option value="{{ $companyKey }}" @selected($selectedCompany === $companyKey)>{{ $companyLabel }}</option>
                                 @endforeach
@@ -43,14 +49,14 @@
 
                         @if ($selectedCompany === 'servanda')
                             <div>
-                                <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Divisi</label>
+                                <label class="{{ $dashboardFilterLabelClass }}">Divisi</label>
                                 @if (filled($forcedDivision))
                                     <input type="hidden" name="division" value="{{ $forcedDivision }}">
-                                    <div class="flex h-[50px] items-center rounded-2xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-800">
+                                    <div class="flex min-h-[52px] items-center rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 text-sm font-semibold text-slate-700 shadow-sm">
                                         {{ $forcedDivision }}
                                     </div>
                                 @else
-                                    <select name="division" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                                    <select name="division" onchange="this.form.submit()" class="{{ $dashboardFilterFieldClass }}">
                                         <option value="">Semua</option>
                                         @foreach ($divisionOptions as $division)
                                             <option value="{{ $division }}" @selected(($selectedDivision ?? null) === $division)>{{ $division }}</option>
@@ -61,8 +67,8 @@
                         @endif
 
                         <div>
-                            <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tahun</label>
-                            <select name="year" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                            <label class="{{ $dashboardFilterLabelClass }}">Tahun</label>
+                            <select name="year" onchange="this.form.submit()" class="{{ $dashboardFilterFieldClass }}">
                                 @foreach ($yearOptions as $year)
                                     <option value="{{ $year }}" @selected($selectedYear === $year)>{{ $year }}</option>
                                 @endforeach
@@ -70,8 +76,8 @@
                         </div>
 
                         <div>
-                            <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Area Manager</label>
-                            <select name="area_manager" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                            <label class="{{ $dashboardFilterLabelClass }}">Area Manager</label>
+                            <select name="area_manager" onchange="this.form.submit()" class="{{ $dashboardFilterFieldClass }}">
                                 <option value="">Semua</option>
                                 @foreach ($areaManagers as $areaManager)
                                     <option value="{{ $areaManager }}" @selected(($selectedAreaManager ?? '') === $areaManager)>{{ $areaManager }}</option>
@@ -80,8 +86,8 @@
                         </div>
 
                         <div>
-                            <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Operation Manager</label>
-                            <select name="operation_manager" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                            <label class="{{ $dashboardFilterLabelClass }}">Operation Manager</label>
+                            <select name="operation_manager" onchange="this.form.submit()" class="{{ $dashboardFilterFieldClass }}">
                                 <option value="">Semua</option>
                                 @foreach ($operationManagers as $operationManager)
                                     <option value="{{ $operationManager }}" @selected(($selectedOperationManager ?? '') === $operationManager)>{{ $operationManager }}</option>
@@ -91,7 +97,7 @@
                     </div>
                 </div>
             </form>
-        </div>
+        </section>
 
         <section class="dashboard-card border border-slate-200 bg-white">
             <div class="flex flex-col gap-4 border-b border-slate-200 pb-4 lg:flex-row lg:items-end lg:justify-between">

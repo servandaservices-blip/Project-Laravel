@@ -64,19 +64,17 @@
             </div>
         @endif
 
-        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <section class="dashboard-card overflow-visible">
             <div class="max-w-3xl">
-                <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-700">Site Area Master</p>
+                <p class="dashboard-eyebrow text-sky-700">Site Area Master</p>
                 <h2 class="mt-2 text-3xl font-bold tracking-tight text-slate-900">Site Area {{ $companyName }}</h2>
-                <p class="mt-3 text-sm leading-7 text-slate-500">
-                    Halaman ini menampilkan master data area yang dapat dikelola langsung dari sistem, termasuk cabang, manager, dan status area.
-                </p>
             </div>
 
-            <form method="GET" action="{{ route('site-area.index') }}" class="w-full xl:max-w-[1120px]">
+            <form method="GET" action="{{ route('site-area.index') }}" class="mt-5">
                 <input type="hidden" name="company" value="{{ $selectedCompany }}">
-                <div class="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
-                    <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_minmax(180px,1fr)_minmax(200px,1fr)_minmax(150px,1fr)] xl:items-end">
+
+                <div class="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-blue-50/60 p-5 shadow-sm">
+                    <div class="site-area-filter-grid">
                         @if ($selectedCompany === 'servanda')
                             <div>
                                 <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Divisi</label>
@@ -86,7 +84,7 @@
                                         {{ $forcedDivision }}
                                     </div>
                                 @else
-                                    <select name="division" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                                    <select name="division" onchange="this.form.submit()" class="site-area-filter-field">
                                         <option value="">Semua</option>
                                         @foreach ($divisionOptions as $division)
                                             <option value="{{ $division }}" @selected(($selectedDivision ?? null) === $division)>{{ $division }}</option>
@@ -98,7 +96,7 @@
 
                         <div>
                             <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Cabang</label>
-                            <select name="branch" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                            <select name="branch" onchange="this.form.submit()" class="site-area-filter-field">
                                 <option value="">Semua</option>
                                 @foreach (collect($branchOptions ?? [])->values() as $branch)
                                     <option value="{{ $branch }}" @selected(($selectedBranch ?? '') === $branch)>{{ $branch }}</option>
@@ -108,7 +106,7 @@
 
                         <div>
                             <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Area Manager</label>
-                            <select name="area_manager" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                            <select name="area_manager" onchange="this.form.submit()" class="site-area-filter-field">
                                 <option value="">Semua</option>
                                 @foreach ($areaManagerOptions as $areaManagerOption)
                                     <option value="{{ $areaManagerOption }}" @selected($selectedAreaManager === $areaManagerOption)>{{ $areaManagerOption }}</option>
@@ -118,7 +116,7 @@
 
                         <div>
                             <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Operation Manager</label>
-                            <select name="operation_manager" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                            <select name="operation_manager" onchange="this.form.submit()" class="site-area-filter-field">
                                 <option value="">Semua</option>
                                 @foreach ($operationManagerOptions as $operationManagerOption)
                                     <option value="{{ $operationManagerOption }}" @selected($selectedOperationManager === $operationManagerOption)>{{ $operationManagerOption }}</option>
@@ -128,7 +126,7 @@
 
                         <div>
                             <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Status</label>
-                            <select name="status" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
+                            <select name="status" onchange="this.form.submit()" class="site-area-filter-field">
                                 <option value="">Semua</option>
                                 @foreach ($statusOptions as $statusOption)
                                     <option value="{{ $statusOption }}" @selected($selectedStatus === $statusOption)>{{ $statusOption }}</option>
@@ -138,7 +136,7 @@
                     </div>
                 </div>
             </form>
-        </div>
+        </section>
 
         <section class="dashboard-card border border-slate-200 bg-white">
             <div class="flex flex-col gap-4 border-b border-slate-200 pb-4 lg:flex-row lg:items-end lg:justify-between">

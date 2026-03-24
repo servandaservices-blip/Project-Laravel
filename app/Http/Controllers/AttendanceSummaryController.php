@@ -22,7 +22,6 @@ class AttendanceSummaryController extends Controller
 {
     use InteractsWithUserAccess;
 
-    private const MAX_WORKDAY = 26;
     private const MASTER_SITE_AREA_TABLE = 'faizal.master_site_areas';
     private const EMPTY_FILTER_VALUE = '__EMPTY__';
 
@@ -30,14 +29,12 @@ class AttendanceSummaryController extends Controller
     {
         $selectedCompany = $this->resolveCompanyKey($request->query('company'));
         $selectedYear = (int) ($request->query('year') ?? now()->year);
-        $perPage = (int) $request->query('per_page', 10);
         $areaPerPage = (int) $request->query('area_per_page', 10);
         $selectedAreaMonth = $request->query('area_month');
         $selectedBranch = trim((string) $request->query('branch', ''));
         $selectedAreaManager = trim((string) $request->query('area_manager', ''));
         $selectedOperationManager = trim((string) $request->query('operation_manager', ''));
         $selectedDivision = $this->resolveAttendanceSummaryDivisionFilter($selectedCompany, $request->query('division'));
-        $siteAreaDivision = $selectedDivision === self::EMPTY_FILTER_VALUE ? null : $selectedDivision;
         $attendanceTargetStore = app(AttendanceTargetStore::class);
         $attendanceTargetSeries = $attendanceTargetStore->dashboardTargets(
             $selectedCompany,
@@ -45,20 +42,10 @@ class AttendanceSummaryController extends Controller
             $selectedDivision,
             $selectedBranch !== '' ? $selectedBranch : null
         );
-        $workdayTargets = $this->resolveWorkdayTargets(
-            $selectedCompany,
-            $selectedYear,
-            $selectedDivision,
-            $selectedBranch
-        );
         $companyConfig = $this->companyConfig($selectedCompany);
         $summaryModel = $this->summaryModel($selectedCompany);
         $summaryTable = (new $summaryModel())->getTable();
         $employeeLookupQuery = $this->employeeLookupQuery($selectedCompany);
-
-        if (! in_array($perPage, [10, 25, 50], true)) {
-            $perPage = 10;
-        }
 
         if (! in_array($areaPerPage, [10, 50, 100], true)) {
             $areaPerPage = 10;
@@ -169,45 +156,14 @@ class AttendanceSummaryController extends Controller
             return $record;
         })->values();
 
-        $yearlyEmployeeProfiles = $records
-            ->groupBy(function ($record) {
-                $employeeNo = trim((string) data_get($record, 'employee_no'));
-
-                return $employeeNo !== '' ? $employeeNo : '__tanpa_nomor__';
-            })
-            ->map(function ($employeeGroup) {
-                $firstRecord = $employeeGroup->first();
-
-                return [
-                    'employee_no' => trim((string) data_get($firstRecord, 'employee_no')),
-                    'pay_freq' => $this->normalizePayFrequency(data_get($firstRecord, 'pay_freq')),
-                    'division' => trim((string) data_get($firstRecord, 'division')) ?: null,
-                    'branch' => trim((string) data_get($firstRecord, 'branch')) ?: null,
-                ];
-            })
-            ->values();
-
-        $months = collect(range(1, 12))->map(function (int $month) use ($records, $workdayTargets, $attendanceTargetSeries, $yearlyEmployeeProfiles) {
+        $months = collect(range(1, 12))->map(function (int $month) use ($records, $attendanceTargetSeries) {
             $monthRecords = $records->where('period_month', $month)->values();
-            $employeesByMonth = $monthRecords
-                ->groupBy(function ($record) {
-                    $employeeNo = trim((string) data_get($record, 'employee_no'));
-
-                    return $employeeNo !== '' ? $employeeNo : '__tanpa_nomor__';
-                })
-                ->map(function ($employeeGroup) {
-                    $firstRecord = $employeeGroup->first();
-
-                    return [
-                        'employee_no' => trim((string) data_get($firstRecord, 'employee_no')),
-                        'pay_freq' => $this->normalizePayFrequency(data_get($firstRecord, 'pay_freq')),
-                        'division' => trim((string) data_get($firstRecord, 'division')) ?: null,
-                        'branch' => trim((string) data_get($firstRecord, 'branch')) ?: null,
-                    ];
-                })
-                ->values();
-
-            $employeeCount = $employeesByMonth->count();
+            $employeeCount = $monthRecords
+                ->pluck('employee_no')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn ($value) => $value !== '')
+                ->unique()
+                ->count();
             $workdayTotal = (int) $monthRecords->sum('workday_count');
             $presentTotal = (int) $monthRecords->sum('presence_count');
             $absentTotal = (int) $monthRecords->sum('absent_count');
@@ -215,15 +171,6 @@ class AttendanceSummaryController extends Controller
             $avgPresent = $employeeCount > 0 ? round($presentTotal / $employeeCount, 2) : 0;
             $avgAbsent = $employeeCount > 0 ? round($absentTotal / $employeeCount, 2) : 0;
             $avgWorkday = $employeeCount > 0 ? round($workdayTotal / $employeeCount, 2) : 0;
-            $targetRows = collect($workdayTargets->get($month, []));
-            $weightedTargetWorkday = $employeeCount > 0
-                ? $this->calculateWeightedWorkdayTarget($employeesByMonth, $targetRows)
-                : (
-                    $yearlyEmployeeProfiles->isNotEmpty()
-                        ? $this->calculateWeightedWorkdayTarget($yearlyEmployeeProfiles, $targetRows)
-                        : $this->resolveConfiguredWorkdayFallback($targetRows)
-                );
-            $targetCompletion = min(($avgPresent / self::MAX_WORKDAY) * 100, 100);
             $attendanceTarget = round((float) ($attendanceTargetSeries->get($month) ?? AttendanceTargetStore::DEFAULT_TARGET), 2);
 
             return [
@@ -239,54 +186,32 @@ class AttendanceSummaryController extends Controller
                 'avg_present' => $avgPresent,
                 'avg_absent' => $avgAbsent,
                 'avg_workday' => $avgWorkday,
-                'target_workday_weighted' => $weightedTargetWorkday,
                 'target_attendance' => $attendanceTarget,
-                'target_completion' => round($targetCompletion, 2),
                 'status_tone' => $this->attendanceTone($attendanceRate),
             ];
         });
 
         $nonEmptyMonths = $months->where('employee_count', '>', 0)->values();
-        $recordCount = $records->count();
-        $employeeCountYear = $records
-            ->pluck('employee_no')
-            ->map(fn ($value) => trim((string) $value))
-            ->filter(fn ($value) => $value !== '')
-            ->unique()
-            ->count();
-        $totalPresentYear = (int) $records->sum('presence_count');
-        $totalAbsentYear = (int) $records->sum('absent_count');
-        $totalWorkdayYear = (int) $records->sum('workday_count');
-        $avgPresentYear = $recordCount > 0 ? round($totalPresentYear / $recordCount, 2) : 0;
-        $avgAbsentYear = $recordCount > 0 ? round($totalAbsentYear / $recordCount, 2) : 0;
-        $avgWorkdayYear = $recordCount > 0 ? round($totalWorkdayYear / $recordCount, 2) : 0;
-        $annualAttendanceRate = $records->sum('workday_count') > 0
-            ? round(($totalPresentYear / $totalWorkdayYear) * 100, 2)
-            : 0;
-        $averageAttendanceRate = $nonEmptyMonths->isNotEmpty()
-            ? round((float) $nonEmptyMonths->avg('attendance_rate'), 2)
-            : 0;
-
         $bestMonth = $nonEmptyMonths->sortByDesc('attendance_rate')->first();
         $lowestMonth = $nonEmptyMonths->sortBy('attendance_rate')->first();
-        $monthsBelowTarget = $nonEmptyMonths
-            ->filter(fn ($month) => (float) $month['attendance_rate'] < (float) ($month['target_attendance'] ?? AttendanceTargetStore::DEFAULT_TARGET))
-            ->count();
-
-        $currentMonthData = $nonEmptyMonths->last();
-        $currentMonth = $currentMonthData['month'] ?? null;
-        $currentMonthLabel = $currentMonth !== null
-            ? Carbon::create()->month((int) $currentMonth)->translatedFormat('F')
-            : null;
-        $currentMonthAreaCount = $currentMonth !== null
-            ? $records
-                ->where('period_month', $currentMonth)
-                ->pluck('area')
-                ->map(fn ($value) => trim((string) $value))
-                ->filter(fn ($value) => filled($value))
-                ->unique(fn ($value) => strtolower($value))
-                ->count()
-            : 0;
+        $workdayTargetSeries = $this->resolveWorkdayTargetSeries(
+            $selectedCompany,
+            $selectedYear,
+            $selectedDivision,
+            $selectedBranch !== '' ? $selectedBranch : null
+        );
+        $monthlyPayFrequencyWorkdayChart = $this->buildPayFrequencyWorkdayChartData(
+            $records,
+            'Bulanan',
+            $workdayTargetSeries,
+            'monthly_target'
+        );
+        $dailyPayFrequencyWorkdayChart = $this->buildPayFrequencyWorkdayChartData(
+            $records,
+            'Harian',
+            $workdayTargetSeries,
+            'daily_target'
+        );
 
         $positionChart = $this->buildGroupedChartData($records, 'position');
         $areaChart = $this->buildGroupedChartData($records, 'area');
@@ -298,6 +223,7 @@ class AttendanceSummaryController extends Controller
             }),
             'pay_freq'
         );
+        $missingPayFrequencyDetails = $this->buildMissingPayFrequencyDetails($records);
 
         $areaTableRecords = $selectedAreaMonth !== null
             ? $records->where('period_month', $selectedAreaMonth)->values()
@@ -364,18 +290,6 @@ class AttendanceSummaryController extends Controller
                 ['avg_present', 'desc'],
             ])
             ->values();
-
-        $areaEmployeeCount = $areaTableRecords
-            ->pluck('employee_no')
-            ->map(fn ($value) => trim((string) $value))
-            ->filter(fn ($value) => $value !== '')
-            ->unique()
-            ->count();
-        $areaGroupCount = $areaAttendanceTableCollection->count();
-        $areaAvgWorkday = $areaGroupCount > 0 ? round((float) $areaAttendanceTableCollection->avg('avg_workday'), 2) : 0;
-        $areaAvgPresent = $areaGroupCount > 0 ? round((float) $areaAttendanceTableCollection->avg('avg_present'), 2) : 0;
-        $areaAvgAbsent = $areaGroupCount > 0 ? round((float) $areaAttendanceTableCollection->avg('avg_absent'), 2) : 0;
-        $areaAttendanceRate = $areaGroupCount > 0 ? round((float) $areaAttendanceTableCollection->avg('attendance_rate'), 2) : 0;
 
         $areaCurrentPage = max((int) $request->query('area_page', 1), 1);
         $areaAttendanceTable = new LengthAwarePaginator(
@@ -470,18 +384,6 @@ class AttendanceSummaryController extends Controller
             ])
             ->values();
 
-        $positionEmployeeCount = $positionTableRecords
-            ->pluck('employee_no')
-            ->map(fn ($value) => trim((string) $value))
-            ->filter(fn ($value) => $value !== '')
-            ->unique()
-            ->count();
-        $positionGroupCount = $positionAttendanceTableCollection->count();
-        $positionAvgWorkday = $positionGroupCount > 0 ? round((float) $positionAttendanceTableCollection->avg('avg_workday'), 2) : 0;
-        $positionAvgPresent = $positionGroupCount > 0 ? round((float) $positionAttendanceTableCollection->avg('avg_present'), 2) : 0;
-        $positionAvgAbsent = $positionGroupCount > 0 ? round((float) $positionAttendanceTableCollection->avg('avg_absent'), 2) : 0;
-        $positionAttendanceRate = $positionGroupCount > 0 ? round((float) $positionAttendanceTableCollection->avg('attendance_rate'), 2) : 0;
-
         $positionCurrentPage = max((int) $request->query('position_page', 1), 1);
         $positionAttendanceTable = new LengthAwarePaginator(
             $positionAttendanceTableCollection->forPage($positionCurrentPage, $positionPerPage)->values(),
@@ -496,43 +398,6 @@ class AttendanceSummaryController extends Controller
                     ->all(),
             ]
         );
-
-        $employeeYearly = $records
-            ->groupBy(function ($record) {
-                $employeeNo = trim((string) data_get($record, 'employee_no'));
-
-                return $employeeNo !== '' ? $employeeNo : '__tanpa_nomor__';
-            })
-            ->map(function ($group, $employeeNo) {
-                $workdayTotal = (int) $group->sum('workday_count');
-                $presentTotal = (int) $group->sum('presence_count');
-                $absentTotal = (int) $group->sum('absent_count');
-                $attendanceRate = $workdayTotal > 0 ? round(($presentTotal / $workdayTotal) * 100, 2) : 0;
-                $firstRecord = $group->first();
-
-                return [
-                    'employee_no' => $employeeNo === '__tanpa_nomor__' ? '-' : $employeeNo,
-                    'employee_name' => trim((string) data_get($firstRecord, 'employee_name')) ?: 'Tanpa Nama',
-                    'position' => trim((string) data_get($firstRecord, 'position')) ?: '-',
-                    'pay_freq' => $this->normalizePayFrequency(data_get($firstRecord, 'pay_freq')),
-                    'area' => trim((string) data_get($firstRecord, 'area')) ?: 'Tanpa Data',
-                    'workday_total' => $workdayTotal,
-                    'present_total' => $presentTotal,
-                    'absent_total' => $absentTotal,
-                    'attendance_rate' => $attendanceRate,
-                ];
-            })
-            ->sortBy([
-                ['attendance_rate', 'desc'],
-                ['employee_name', 'asc'],
-            ])
-            ->values();
-
-        $topAttendance = $employeeYearly->take(5)->values();
-        $lowestAttendance = $employeeYearly->sortBy([
-            ['attendance_rate', 'asc'],
-            ['absent_total', 'desc'],
-        ])->take(5)->values();
 
         $siteAreaFilterOptions = $this->siteAreaFilterQuery($selectedCompany)
             ->select([
@@ -565,19 +430,6 @@ class AttendanceSummaryController extends Controller
             ->unique(fn ($value) => strtolower($value))
             ->sort()
             ->values();
-
-        $currentPage = max((int) $request->query('page', 1), 1);
-        $paginatedReports = new LengthAwarePaginator(
-            $employeeYearly->forPage($currentPage, $perPage)->values(),
-            $employeeYearly->count(),
-            $perPage,
-            $currentPage,
-            [
-                'path' => $request->url(),
-                'query' => $request->query(),
-            ]
-        );
-
         return view('dashboard.workday-dashboard', [
             'selectedCompany' => $selectedCompany,
             'selectedYear' => $selectedYear,
@@ -585,10 +437,7 @@ class AttendanceSummaryController extends Controller
             'selectedBranch' => $selectedBranch,
             'selectedAreaManager' => $selectedAreaManager,
             'selectedOperationManager' => $selectedOperationManager,
-            'attendanceTargetSeries' => $attendanceTargetSeries->values(),
             'companyName' => $companyConfig['label'],
-            'maxWorkday' => self::MAX_WORKDAY,
-            'selectedPerPage' => $perPage,
             'selectedAreaPerPage' => $areaPerPage,
             'selectedAreaMonth' => $selectedAreaMonth,
             'selectedPositionPerPage' => $positionPerPage,
@@ -597,45 +446,17 @@ class AttendanceSummaryController extends Controller
             'branchOptions' => $branchOptions,
             'areaManagers' => $areaManagers,
             'operationManagers' => $operationManagers,
-            'summaryCards' => [
-                'employee_count' => $employeeCountYear,
-                'current_month_area_count' => $currentMonthAreaCount,
-                'current_month_label' => $currentMonthLabel,
-                'total_present' => $totalPresentYear,
-                'total_absent' => $totalAbsentYear,
-                'avg_present' => $avgPresentYear,
-                'avg_absent' => $avgAbsentYear,
-                'avg_workday' => $avgWorkdayYear,
-                'annual_attendance_rate' => $annualAttendanceRate,
-                'average_attendance_rate' => $averageAttendanceRate,
-                'months_below_target' => $monthsBelowTarget,
-            ],
             'bestMonth' => $bestMonth,
             'lowestMonth' => $lowestMonth,
+            'workdayTargetSeries' => $workdayTargetSeries,
+            'monthlyPayFrequencyWorkdayChart' => $monthlyPayFrequencyWorkdayChart,
+            'dailyPayFrequencyWorkdayChart' => $dailyPayFrequencyWorkdayChart,
             'positionChart' => $positionChart,
             'areaChart' => $areaChart,
             'payFrequencyChart' => $payFrequencyChart,
+            'missingPayFrequencyDetails' => $missingPayFrequencyDetails,
             'areaAttendanceTable' => $areaAttendanceTable,
-            'areaSummaryCards' => [
-                'employee_count' => $areaEmployeeCount,
-                'group_count' => $areaGroupCount,
-                'avg_workday' => $areaAvgWorkday,
-                'avg_present' => $areaAvgPresent,
-                'avg_absent' => $areaAvgAbsent,
-                'attendance_rate' => $areaAttendanceRate,
-            ],
             'positionAttendanceTable' => $positionAttendanceTable,
-            'positionSummaryCards' => [
-                'employee_count' => $positionEmployeeCount,
-                'group_count' => $positionGroupCount,
-                'avg_workday' => $positionAvgWorkday,
-                'avg_present' => $positionAvgPresent,
-                'avg_absent' => $positionAvgAbsent,
-                'attendance_rate' => $positionAttendanceRate,
-            ],
-            'topAttendance' => $topAttendance,
-            'lowestAttendance' => $lowestAttendance,
-            'reports' => $paginatedReports,
         ]);
     }
 
@@ -669,6 +490,82 @@ class AttendanceSummaryController extends Controller
         $workdayView = $this->dashboardWorkday($attendancePositionRequest);
 
         return view('dashboard.attendance-position-dashboard', $workdayView->getData());
+    }
+
+    public function welcome(Request $request, AttendancePeriodService $periodService)
+    {
+        $selectedCompany = $this->resolveCompanyKey($request->query('company'));
+        $companyConfig = $this->companyConfig($selectedCompany);
+        $summaryModel = $this->summaryModel($selectedCompany);
+        $summaryTable = (new $summaryModel())->getTable();
+        $month = (int) ($request->query('month') ?? now()->month);
+        $year = (int) ($request->query('year') ?? now()->year);
+        $period = $periodService->buildPeriod($month, $year);
+
+        $baseQuery = $summaryModel::query()
+            ->from($summaryTable . ' as attendance_summaries')
+            ->where('attendance_summaries.company_id', $companyConfig['company_id'])
+            ->where('attendance_summaries.period_year', $period['period_year']);
+
+        $monthQuery = (clone $baseQuery)->where('attendance_summaries.period_month', $period['period_month']);
+        $totalEmployees = (clone $monthQuery)->distinct('attendance_summaries.employee_no')->count('attendance_summaries.employee_no');
+        $workdayTotal = (int) (clone $monthQuery)->sum('attendance_summaries.workday_count');
+        $presentTotal = (int) (clone $monthQuery)->sum('attendance_summaries.presence_count');
+        $attendanceToday = $workdayTotal > 0 ? round(($presentTotal / $workdayTotal) * 100, 2) : 0;
+        $avgAttendance = round((float) ((clone $monthQuery)->avg('attendance_summaries.attendance_rate') ?? 0), 2);
+
+        $totalAreas = DB::table(self::MASTER_SITE_AREA_TABLE)
+            ->where('company', $selectedCompany)
+            ->distinct('area_name')
+            ->count('area_name');
+
+        $monthlyRates = (clone $baseQuery)
+            ->selectRaw('attendance_summaries.period_month as month, SUM(attendance_summaries.workday_count) as workday_total, SUM(attendance_summaries.presence_count) as present_total')
+            ->groupBy('attendance_summaries.period_month')
+            ->get()
+            ->map(function ($row) {
+                $workday = (int) $row->workday_total;
+                $present = (int) $row->present_total;
+                $rate = $workday > 0 ? round(($present / $workday) * 100, 2) : 0;
+
+                return [
+                    'month' => (int) $row->month,
+                    'attendance_rate' => $rate,
+                ];
+            })
+            ->keyBy('month');
+
+        $trendLabels = collect(range(1, 12))
+            ->map(fn ($m) => Carbon::create()->month($m)->translatedFormat('M'))
+            ->values();
+        $trendAttendanceSeries = collect(range(1, 12))
+            ->map(fn ($m) => (float) data_get($monthlyRates->get($m), 'attendance_rate', 0))
+            ->values();
+
+        $nonEmptyMonths = $monthlyRates
+            ->filter(fn ($row) => (float) ($row['attendance_rate'] ?? 0) > 0)
+            ->values();
+        $bestMonth = $nonEmptyMonths->sortByDesc('attendance_rate')->first();
+        $lowestMonth = $nonEmptyMonths->sortBy('attendance_rate')->first();
+        $bestMonthLabel = $bestMonth ? Carbon::create()->month($bestMonth['month'])->translatedFormat('F') : '-';
+        $bestMonthRate = $bestMonth['attendance_rate'] ?? 0;
+        $lowestMonthLabel = $lowestMonth ? Carbon::create()->month($lowestMonth['month'])->translatedFormat('F') : '-';
+        $lowestMonthRate = $lowestMonth['attendance_rate'] ?? 0;
+
+        return view('dashboard.welcome', [
+            'companyName' => $companyConfig['label'],
+            'period' => $period,
+            'totalEmployees' => $totalEmployees,
+            'attendanceToday' => $attendanceToday,
+            'avgAttendance' => $avgAttendance,
+            'totalAreas' => $totalAreas,
+            'bestMonthLabel' => $bestMonthLabel,
+            'bestMonthRate' => $bestMonthRate,
+            'lowestMonthLabel' => $lowestMonthLabel,
+            'lowestMonthRate' => $lowestMonthRate,
+            'trendLabels' => $trendLabels,
+            'trendAttendanceSeries' => $trendAttendanceSeries,
+        ]);
     }
 
     public function index(Request $request, AttendancePeriodService $periodService)
@@ -1173,163 +1070,6 @@ class AttendanceSummaryController extends Controller
             );
     }
 
-    private function resolveWorkdayTargets(string $company, int $year, ?string $division = null, ?string $branch = null)
-    {
-        $targets = WorkdayTarget::query()
-            ->where('company', $company)
-            ->where('year', $year)
-            ->when(
-                $company === 'servanda',
-                fn ($query) => $query
-                    ->whereNotNull('division')
-                    ->where('division', '!=', '')
-            )
-            ->when(
-                $company === 'servanda' && $division !== null,
-                fn ($query) => $query->where('division', $division)
-            )
-            ->when(
-                $branch !== null,
-                fn ($query) => $query->where(function ($branchQuery) use ($branch) {
-                    $branchQuery
-                        ->where('branch', $branch)
-                        ->orWhereNull('branch');
-                })
-            )
-            ->get();
-
-        return collect(range(1, 12))->mapWithKeys(function (int $month) use ($targets) {
-            return [
-                $month => $targets
-                    ->where('month', $month)
-                    ->map(function ($target) {
-                        return [
-                            'division' => $this->normalizeNullableFilterValue($target->division),
-                            'branch' => $this->normalizeNullableFilterValue($target->branch),
-                            'monthly_target' => $target->monthly_target !== null
-                                ? (float) $target->monthly_target
-                                : 21.00,
-                            'daily_target' => $target->daily_target !== null
-                                ? (float) $target->daily_target
-                                : (float) self::MAX_WORKDAY,
-                        ];
-                    })
-                    ->values(),
-            ];
-        });
-    }
-
-    private function resolveMatchingWorkdayTarget($targets, ?string $division = null, ?string $branch = null): array
-    {
-        $normalizedDivision = $this->normalizeNullableFilterValue($division);
-        $normalizedBranch = $this->normalizeNullableFilterValue($branch);
-
-        $match = collect($targets)
-            ->map(function ($target) {
-                return [
-                    'division' => $this->normalizeNullableFilterValue(data_get($target, 'division')),
-                    'branch' => $this->normalizeNullableFilterValue(data_get($target, 'branch')),
-                    'monthly_target' => (float) (data_get($target, 'monthly_target', 21.00)),
-                    'daily_target' => (float) (data_get($target, 'daily_target', self::MAX_WORKDAY)),
-                ];
-            })
-            ->filter(function (array $target) use ($normalizedDivision, $normalizedBranch) {
-                if ($target['division'] !== null && $target['division'] !== $normalizedDivision) {
-                    return false;
-                }
-
-                if ($target['branch'] !== null && $target['branch'] !== $normalizedBranch) {
-                    return false;
-                }
-
-                return true;
-            })
-            ->sortByDesc(function (array $target) {
-                $score = 0;
-
-                if ($target['division'] !== null) {
-                    $score += 2;
-                }
-
-                if ($target['branch'] !== null) {
-                    $score += 1;
-                }
-
-                return $score;
-            })
-            ->first();
-
-        return $match ?? [
-            'division' => null,
-            'branch' => null,
-            'monthly_target' => 21.00,
-            'daily_target' => (float) self::MAX_WORKDAY,
-        ];
-    }
-
-    private function calculateWeightedWorkdayTarget($employees, $targetRows): float
-    {
-        $employees = collect($employees)->values();
-        $employeeCount = $employees->count();
-
-        if ($employeeCount === 0) {
-            return $this->resolveConfiguredWorkdayFallback($targetRows);
-        }
-
-        $employeeTargetTotal = $employees->sum(function ($employee) use ($targetRows) {
-            $target = $this->resolveMatchingWorkdayTarget(
-                $targetRows,
-                data_get($employee, 'division'),
-                data_get($employee, 'branch')
-            );
-
-            $monthlyTarget = (float) ($target['monthly_target'] ?? 21.00);
-            $dailyTarget = (float) ($target['daily_target'] ?? self::MAX_WORKDAY);
-            $payFrequency = data_get($employee, 'pay_freq', 'Tanpa Data');
-
-            return match ($payFrequency) {
-                'Bulanan' => $monthlyTarget,
-                'Harian' => $dailyTarget,
-                default => 0,
-            };
-        });
-
-        return round($employeeTargetTotal / $employeeCount, 2);
-    }
-
-    private function resolveConfiguredWorkdayFallback($targetRows): float
-    {
-        $targetRows = collect($targetRows)->map(function ($target) {
-            return [
-                'division' => $this->normalizeNullableFilterValue(data_get($target, 'division')),
-                'branch' => $this->normalizeNullableFilterValue(data_get($target, 'branch')),
-                'monthly_target' => (float) data_get($target, 'monthly_target', 21.00),
-                'daily_target' => (float) data_get($target, 'daily_target', self::MAX_WORKDAY),
-            ];
-        })->values();
-
-        if ($targetRows->isEmpty()) {
-            return 21.00;
-        }
-
-        $genericTarget = $targetRows->first(function (array $target) {
-            return $target['division'] === null && $target['branch'] === null;
-        });
-
-        if ($genericTarget !== null) {
-            return round((float) $genericTarget['monthly_target'], 2);
-        }
-
-        return round((float) $targetRows->avg('monthly_target'), 2);
-    }
-
-    private function normalizeNullableFilterValue(mixed $value): ?string
-    {
-        $normalized = trim((string) $value);
-
-        return $normalized !== '' ? $normalized : null;
-    }
-
     private function prependEmptyFilterOption($options)
     {
         $normalizedOptions = collect($options)
@@ -1446,22 +1186,6 @@ class AttendanceSummaryController extends Controller
         }
     }
 
-    private function activeEmployeeCount(string $companyKey, ?string $division = null): int
-    {
-        $query = DB::query()
-            ->fromSub($this->employeeLookupQuery($companyKey), 'employee_master')
-            ->whereNotNull('employee_master.employee_no')
-            ->where('employee_master.employee_no', '!=', '');
-
-        $this->applyActiveStatusFilter($query, 'employee_master.status');
-
-        if ($companyKey === 'servanda' && $division !== null) {
-            $query->where('employee_master.division', $division);
-        }
-
-        return (int) $query->distinct()->count('employee_master.employee_no');
-    }
-
     private function applyActiveStatusFilter($query, string $column = 'status'): void
     {
         $query->where(function ($statusQuery) use ($column) {
@@ -1494,40 +1218,6 @@ class AttendanceSummaryController extends Controller
         return 'critical';
     }
 
-    private function buildGroupedInsights($records, string $key)
-    {
-        return $records
-            ->groupBy(function ($record) use ($key) {
-                $value = trim((string) data_get($record, $key));
-
-                return $value !== '' ? $value : 'Tanpa Data';
-            })
-            ->map(function ($group, $label) {
-                $employeeCount = $group->pluck('employee_no')->filter()->unique()->count();
-                $workdayTotal = $group->sum('workday_count');
-                $presentTotal = $group->sum('presence_count');
-                $absentTotal = $group->sum('absent_count');
-                $attendanceRate = $workdayTotal > 0 ? round(($presentTotal / $workdayTotal) * 100, 2) : 0;
-                $avgPresent = $employeeCount > 0 ? round($presentTotal / $employeeCount, 2) : 0;
-                $avgAbsent = $employeeCount > 0 ? round($absentTotal / $employeeCount, 2) : 0;
-
-                return [
-                    'label' => $label,
-                    'employee_count' => $employeeCount,
-                    'attendance_rate' => $attendanceRate,
-                    'avg_present' => $avgPresent,
-                    'avg_absent' => $avgAbsent,
-                    'tone' => $this->attendanceTone($attendanceRate),
-                ];
-            })
-            ->sortBy([
-                ['attendance_rate', 'asc'],
-                ['avg_absent', 'desc'],
-            ])
-            ->take(5)
-            ->values();
-    }
-
     private function buildGroupedChartData($records, string $key)
     {
         return $records
@@ -1555,6 +1245,139 @@ class AttendanceSummaryController extends Controller
             ->values();
     }
 
+    private function buildMissingPayFrequencyDetails($records)
+    {
+        return $records
+            ->filter(fn ($record) => $this->normalizePayFrequency(data_get($record, 'pay_freq')) === 'Tanpa Data')
+            ->groupBy(function ($record) {
+                $employeeNo = trim((string) data_get($record, 'employee_no'));
+                $employeeName = trim((string) data_get($record, 'employee_name'));
+
+                if ($employeeNo !== '') {
+                    return $employeeNo;
+                }
+
+                return $employeeName !== '' ? '__name__' . strtolower($employeeName) : '__tanpa_identitas__';
+            })
+            ->map(function ($employeeGroup) {
+                $firstRecord = $employeeGroup->first();
+
+                return [
+                    'employee_name' => trim((string) data_get($firstRecord, 'employee_name')) ?: 'Tanpa Nama',
+                    'employee_no' => trim((string) data_get($firstRecord, 'employee_no')) ?: '-',
+                    'division' => trim((string) data_get($firstRecord, 'division')) ?: '-',
+                    'branch' => trim((string) data_get($firstRecord, 'branch')) ?: '-',
+                    'area' => trim((string) data_get($firstRecord, 'area')) ?: 'Tanpa Data',
+                    'status_note' => 'Jenis gaji belum diisi',
+                ];
+            })
+            ->sortBy([
+                ['employee_name', 'asc'],
+                ['employee_no', 'asc'],
+            ])
+            ->values();
+    }
+
+    private function buildPayFrequencyWorkdayChartData($records, string $payFrequencyLabel, $targetSeries, string $targetKey)
+    {
+        return collect(range(1, 12))->map(function (int $month) use ($records, $payFrequencyLabel, $targetSeries, $targetKey) {
+            $monthRecords = $records
+                ->filter(function ($record) use ($month, $payFrequencyLabel) {
+                    return (int) data_get($record, 'period_month') === $month
+                        && $this->normalizePayFrequency(data_get($record, 'pay_freq')) === $payFrequencyLabel;
+                })
+                ->values();
+
+            $employeeCount = $monthRecords
+                ->pluck('employee_no')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn ($value) => $value !== '')
+                ->unique()
+                ->count();
+
+            $actualWorkday = $employeeCount > 0
+                ? round(((int) $monthRecords->sum('workday_count')) / $employeeCount, 2)
+                : 0;
+
+            return [
+                'month' => $month,
+                'label' => Carbon::create()->month($month)->translatedFormat('M'),
+                'full_label' => Carbon::create()->month($month)->translatedFormat('F'),
+                'employee_count' => $employeeCount,
+                'actual_workday' => $actualWorkday,
+                'target_workday' => round((float) data_get($targetSeries, "{$month}.{$targetKey}", 0), 2),
+            ];
+        })->values();
+    }
+
+    private function resolveWorkdayTargetSeries(string $company, int $year, ?string $division = null, ?string $branch = null)
+    {
+        $normalizedDivision = $this->normalizeNullableString($division);
+        $normalizedBranch = $this->normalizeNullableString($branch);
+
+        $rows = WorkdayTarget::query()
+            ->where('company', $company)
+            ->where('year', $year)
+            ->when(
+                $normalizedBranch !== null,
+                fn ($query) => $query->where('branch', $normalizedBranch),
+                fn ($query) => $query->whereNull('branch')
+            )
+            ->get()
+            ->map(function (WorkdayTarget $target) {
+                return [
+                    'month' => (int) $target->month,
+                    'division' => $this->normalizeNullableString($target->division),
+                    'monthly_target' => $target->monthly_target !== null ? round((float) $target->monthly_target, 2) : null,
+                    'daily_target' => $target->daily_target !== null ? round((float) $target->daily_target, 2) : null,
+                ];
+            })
+            ->groupBy('month');
+
+        return collect(range(1, 12))->mapWithKeys(function (int $month) use ($rows, $company, $normalizedDivision) {
+            $monthRows = collect($rows->get($month, collect()));
+
+            if ($company === 'servanda' && $normalizedDivision === null) {
+                $monthlyTargets = $monthRows
+                    ->whereIn('division', ['Cleaning', 'Security'])
+                    ->pluck('monthly_target')
+                    ->filter(fn ($value) => $value !== null)
+                    ->values();
+                $dailyTargets = $monthRows
+                    ->whereIn('division', ['Cleaning', 'Security'])
+                    ->pluck('daily_target')
+                    ->filter(fn ($value) => $value !== null)
+                    ->values();
+
+                return [
+                    $month => [
+                        'monthly_target' => $monthlyTargets->isNotEmpty() ? round((float) $monthlyTargets->avg(), 2) : 0,
+                        'daily_target' => $dailyTargets->isNotEmpty() ? round((float) $dailyTargets->avg(), 2) : 0,
+                    ],
+                ];
+            }
+
+            $match = $monthRows->first(function (array $row) use ($company, $normalizedDivision) {
+                if ($company === 'servanda') {
+                    return $row['division'] === $normalizedDivision;
+                }
+
+                if ($normalizedDivision !== null) {
+                    return $row['division'] === $normalizedDivision;
+                }
+
+                return $row['division'] === null;
+            });
+
+            return [
+                $month => [
+                    'monthly_target' => round((float) data_get($match, 'monthly_target', 0), 2),
+                    'daily_target' => round((float) data_get($match, 'daily_target', 0), 2),
+                ],
+            ];
+        });
+    }
+
     private function normalizePayFrequency(?string $payFrequency): string
     {
         $normalized = strtolower(trim((string) $payFrequency));
@@ -1564,6 +1387,13 @@ class AttendanceSummaryController extends Controller
             'monthly', 'bulanan' => 'Bulanan',
             default => $normalized !== '' ? ucwords($normalized) : 'Tanpa Data',
         };
+    }
+
+    private function normalizeNullableString(mixed $value): ?string
+    {
+        $normalized = trim((string) $value);
+
+        return $normalized !== '' ? $normalized : null;
     }
 
     private function resolveDivisionFilter(string $companyKey, ?string $division): ?string

@@ -9,10 +9,22 @@
 @endphp
 
 <header class="sticky top-0 z-30 border-b border-slate-200/70 bg-white/80 backdrop-blur">
-    <div class="flex h-20 items-center justify-between px-6 lg:px-10">
-        <div>
-            <h1 class="text-2xl font-bold tracking-tight text-slate-900">@yield('page_title', 'Dashboard')</h1>
-            <p class="text-sm text-slate-500">@yield('page_subtitle', 'Modern admin portal')</p>
+    <div class="flex h-20 items-center justify-between gap-3 px-6 lg:px-10">
+        <div class="flex items-center gap-3">
+            <button
+                type="button"
+                @click="sidebarOpen = !sidebarOpen"
+                class="dashboard-hamburger"
+                aria-label="Toggle sidebar"
+            >
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <div>
+                <h1 class="text-2xl font-bold tracking-tight text-slate-900">@yield('page_title', 'Dashboard')</h1>
+                <p class="text-sm text-slate-500">@yield('page_subtitle', 'Modern admin portal')</p>
+            </div>
         </div>
 
         <div class="relative" @click.outside="profileOpen = false">

@@ -38,8 +38,17 @@
 
             return route('attendance.summary', $query);
         };
+        $attendanceFilterLabelClass = 'mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500';
+        $attendanceFilterFieldClass = 'w-full rounded-2xl border border-sky-200 bg-sky-50/40 px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-4 focus:ring-sky-100';
+        $attendanceResetUrl = route('attendance.summary', array_filter([
+            'company' => $selectedCompany ?? 'servanda',
+            'month' => $selectedMonth,
+            'year' => $selectedYear,
+            'per_page' => $selectedPerPage ?? 10,
+            'division' => (($selectedCompany ?? 'servanda') === 'servanda' && filled($forcedDivision)) ? $forcedDivision : null,
+        ], fn ($value) => $value !== null && $value !== ''));
     @endphp
-    <section class="dashboard-card">
+    <section class="dashboard-card overflow-visible">
         @if (session('success'))
             <div class="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                 {{ session('success') }}
@@ -52,12 +61,13 @@
             </div>
         @endif
 
-        <div class="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-cyan-50/50 p-5 shadow-sm sm:p-6">
-            <div class="rounded-[1.75rem] border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 px-6 py-6 text-slate-900 shadow-sm">
-                <p class="text-xs font-semibold uppercase tracking-[0.28em] text-sky-700">Attendance Report</p>
-                <h2 class="mt-3 text-3xl font-bold tracking-tight text-slate-900">Attendance Summary - {{ $companyName ?? 'Servanda' }}</h2>
+        <div class="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <div class="max-w-4xl">
+                <p class="dashboard-eyebrow text-sky-700">Attendance Report</p>
+                <h2 class="mt-2 text-3xl font-bold tracking-tight text-slate-900">Attendance Summary - {{ $companyName ?? 'Servanda' }}</h2>
+                <p class="mt-2 text-sm text-slate-500">Ringkasan attendance per periode untuk memantau kehadiran, hari kerja, dan penempatan karyawan.</p>
                 <div class="mt-5 flex flex-wrap gap-3">
-                    <span class="inline-flex items-center rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold tracking-[0.14em] text-sky-700 shadow-sm">
+                    <span class="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold tracking-[0.12em] text-sky-700 shadow-sm">
                         Periode {{ $period['period_label'] }}
                     </span>
                     <span class="inline-flex items-center rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold tracking-[0.08em] text-cyan-700 shadow-sm">
@@ -66,80 +76,14 @@
                 </div>
             </div>
 
-            <div class="mt-6 rounded-[1.75rem] border border-slate-200 bg-white/90 p-5 shadow-sm">
-                <div class="rounded-[1.5rem] border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
-                    <div class="mb-4 border-b border-slate-200 pb-3">
-                        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Sinkronisasi</p>
-                        <p class="mt-1 text-sm text-slate-500">Pilih bulan dan tahun, lalu jalankan sinkronisasi data attendance.</p>
-                    </div>
-
-                    <form method="POST" action="{{ route('attendance.summary.sync') }}" class="grid gap-4 md:grid-cols-[1fr_1fr_210px] md:items-end">
-                        @csrf
-                        <input type="hidden" name="company" value="{{ $selectedCompany ?? 'servanda' }}">
-                        @if (($selectedCompany ?? 'servanda') === 'servanda' && ! empty($selectedDivision))
-                            <input type="hidden" name="division" value="{{ $selectedDivision }}">
-                        @endif
-                        <input type="hidden" name="per_page" value="{{ $selectedPerPage ?? 10 }}">
-                        <input type="hidden" name="search" value="{{ $selectedSearch ?? '' }}">
-                        <input type="hidden" name="attendance_rate_filter" value="{{ $selectedAttendanceRateFilter ?? '' }}">
-                        @foreach ($selectedPositionCollection as $position)
-                            <input type="hidden" name="position[]" value="{{ $position }}">
-                        @endforeach
-                        <input type="hidden" name="pay_freq" value="{{ $selectedPayFrequencyFilter ?? '' }}">
-                        @foreach ($selectedAreaCollection as $area)
-                            <input type="hidden" name="area[]" value="{{ $area }}">
-                        @endforeach
-                        <input type="hidden" name="area_manager" value="{{ $selectedAreaManager }}">
-                        <input type="hidden" name="operation_manager" value="{{ $selectedOperationManager }}">
-
-                        <div>
-                            <label class="mb-2 block text-sm font-medium text-slate-700">Bulan</label>
-                            <select name="month" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
-                                @for ($m = 1; $m <= 12; $m++)
-                                    <option value="{{ $m }}" @selected($selectedMonth == $m)>
-                                        {{ \Carbon\Carbon::create()->month($m)->translatedFormat('F') }}
-                                    </option>
-                                @endfor
-                            </select>
-                        </div>
-
-                        <div>
-                            <label class="mb-2 block text-sm font-medium text-slate-700">Tahun</label>
-                            <select name="year" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
-                                @for ($y = 2024; $y <= 2030; $y++)
-                                    <option value="{{ $y }}" @selected($selectedYear == $y)>
-                                        {{ $y }}
-                                    </option>
-                                @endfor
-                            </select>
-                        </div>
-
-                        <button type="submit" class="flex h-[54px] w-full items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800">
-                            Syncronisasi
-                        </button>
-                    </form>
-                </div>
-
-            </div>
-        </div>
-    </section>
-
-    <section class="dashboard-card mt-6 overflow-hidden p-0">
-        <div class="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-                <h3 class="text-xl font-semibold text-slate-900">Tabel Attendance Summary</h3>
-                <p class="mt-1 text-sm text-slate-500">
-                    Menampilkan data attendance dari database.
-                </p>
-            </div>
-            <div class="flex flex-col gap-3 text-sm text-slate-500 sm:flex-row sm:items-end sm:gap-4">
-                <form method="GET" action="{{ route('attendance.summary') }}" class="flex items-center gap-2">
+            <div class="mt-6">
+                <form method="POST" action="{{ route('attendance.summary.sync') }}" class="attendance-summary-sync-grid">
+                    @csrf
                     <input type="hidden" name="company" value="{{ $selectedCompany ?? 'servanda' }}">
                     @if (($selectedCompany ?? 'servanda') === 'servanda' && ! empty($selectedDivision))
                         <input type="hidden" name="division" value="{{ $selectedDivision }}">
                     @endif
-                    <input type="hidden" name="month" value="{{ $selectedMonth }}">
-                    <input type="hidden" name="year" value="{{ $selectedYear }}">
+                    <input type="hidden" name="per_page" value="{{ $selectedPerPage ?? 10 }}">
                     <input type="hidden" name="search" value="{{ $selectedSearch ?? '' }}">
                     <input type="hidden" name="attendance_rate_filter" value="{{ $selectedAttendanceRateFilter ?? '' }}">
                     @foreach ($selectedPositionCollection as $position)
@@ -151,74 +95,116 @@
                     @endforeach
                     <input type="hidden" name="area_manager" value="{{ $selectedAreaManager }}">
                     <input type="hidden" name="operation_manager" value="{{ $selectedOperationManager }}">
-                    <select id="per_page" name="per_page" onchange="this.form.submit()" class="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                        @foreach ([10, 50, 100] as $pageSize)
-                            <option value="{{ $pageSize }}" @selected(($selectedPerPage ?? 10) == $pageSize)>
-                                {{ $pageSize }}
-                            </option>
-                        @endforeach
-                    </select>
+
+                    <div>
+                        <label class="{{ $attendanceFilterLabelClass }}">Bulan</label>
+                        <select name="month" class="{{ $attendanceFilterFieldClass }}">
+                            @for ($m = 1; $m <= 12; $m++)
+                                <option value="{{ $m }}" @selected($selectedMonth == $m)>
+                                    {{ \Carbon\Carbon::create()->month($m)->translatedFormat('F') }}
+                                </option>
+                            @endfor
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="{{ $attendanceFilterLabelClass }}">Tahun</label>
+                        <select name="year" class="{{ $attendanceFilterFieldClass }}">
+                            @for ($y = 2024; $y <= 2030; $y++)
+                                <option value="{{ $y }}" @selected($selectedYear == $y)>
+                                    {{ $y }}
+                                </option>
+                            @endfor
+                        </select>
+                    </div>
+
+                    <button type="submit" class="inline-flex h-[52px] w-full items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800">
+                        Sinkronisasi
+                    </button>
                 </form>
-                <div class="text-sm text-slate-500">
-                    Menampilkan {{ $reports->firstItem() ?? 0 }} - {{ $reports->lastItem() ?? 0 }} dari {{ $reports->total() }} data
-                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="dashboard-card mt-6 border border-slate-200 bg-white">
+        <div class="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Attendance Table</p>
+                <h3 class="text-xl font-semibold text-slate-900">Tabel Attendance Summary</h3>
+                <p class="mt-1 text-sm text-slate-500">Data attendance operasional per employee sesuai periode, filter penempatan, dan jenis gaji yang dipilih.</p>
+            </div>
+            <div class="inline-flex items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-600 shadow-sm">
+                Total {{ number_format($summaryStats['employee_count'] ?? $reports->total()) }} employee
             </div>
         </div>
 
-        <div class="px-6 py-5">
-            <div>
-                <form
-                    id="attendance-filter-form"
-                    method="GET"
-                    action="{{ route('attendance.summary') }}"
-                    class="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
-                >
-                    <input type="hidden" name="company" value="{{ $selectedCompany ?? 'servanda' }}">
-                    <input type="hidden" name="per_page" value="{{ $selectedPerPage ?? 10 }}">
-                    <input type="hidden" name="month" value="{{ $selectedMonth }}">
-                    <input type="hidden" name="year" value="{{ $selectedYear }}">
-                    <div class="rounded-[1.4rem] border border-slate-200 bg-slate-50/70 p-4">
-                        <label class="mb-2 block text-sm font-medium text-slate-700">Search Employee / Employee No / Area</label>
-                        <input
-                            type="text"
-                            name="search"
-                            value="{{ $selectedSearch ?? '' }}"
-                            placeholder="Cari nama karyawan, employee no, atau area"
-                            class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm placeholder:text-slate-400"
-                        >
+        <form
+            id="attendance-filter-form"
+            method="GET"
+            action="{{ route('attendance.summary') }}"
+            class="mt-5 space-y-5"
+        >
+            <input type="hidden" name="company" value="{{ $selectedCompany ?? 'servanda' }}">
+            <input type="hidden" name="month" value="{{ $selectedMonth }}">
+            <input type="hidden" name="year" value="{{ $selectedYear }}">
 
-                        @if (($selectedCompany ?? 'servanda') === 'servanda')
-                            <div class="mt-4">
-                                <label class="mb-2 block text-sm font-medium text-slate-700">Divisi</label>
-                                @if (filled($forcedDivision))
-                                    <input type="hidden" name="division" value="{{ $forcedDivision }}">
-                                    <div class="flex min-h-[50px] items-center rounded-2xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-800">
-                                        {{ $forcedDivision }}
-                                    </div>
-                                @else
-                                    <select name="division" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
-                                        <option value="">Semua</option>
-                                        @foreach ($divisionOptions as $division)
-                                            <option value="{{ $division }}" @selected(($selectedDivision ?? null) === $division)>{{ $division === $emptyFilterValue ? 'Tanpa Data' : $division }}</option>
-                                        @endforeach
-                                    </select>
-                                @endif
-                            </div>
-                        @endif
+            <div class="attendance-summary-toolbar">
+                <div>
+                    <label class="{{ $attendanceFilterLabelClass }}">Search Employee / Employee No / Area</label>
+                    <input
+                        type="text"
+                        name="search"
+                        value="{{ $selectedSearch ?? '' }}"
+                        placeholder="Cari nama karyawan, employee no, atau area"
+                        class="{{ $attendanceFilterFieldClass }}"
+                    >
+                </div>
+
+                <div class="attendance-summary-toolbar-side">
+                    <div class="attendance-summary-show-field">
+                        <label class="{{ $attendanceFilterLabelClass }}">Show</label>
+                        <select id="per_page" name="per_page" onchange="this.form.submit()" class="{{ $attendanceFilterFieldClass }}">
+                            @foreach ([10, 50, 100] as $pageSize)
+                                <option value="{{ $pageSize }}" @selected(($selectedPerPage ?? 10) == $pageSize)>{{ $pageSize }}</option>
+                            @endforeach
+                        </select>
                     </div>
+                </div>
+            </div>
 
-                    <div class="rounded-[1.4rem] border border-slate-200 bg-slate-50/70 p-4">
-                        <label class="mb-2 block text-sm font-medium text-slate-700">Filter Attendance %</label>
-                        <select name="attendance_rate_filter" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition focus:border-slate-300 focus:outline-none">
-                            <option value="" @selected(($selectedAttendanceRateFilter ?? '') === '')>Semua Attendance %</option>
+            <div class="attendance-summary-filter-card">
+                <div class="attendance-summary-filter-grid">
+                    @if (($selectedCompany ?? 'servanda') === 'servanda')
+                        <div class="attendance-summary-filter-panel">
+                            <label class="{{ $attendanceFilterLabelClass }}">Divisi</label>
+                            @if (filled($forcedDivision))
+                                <input type="hidden" name="division" value="{{ $forcedDivision }}">
+                                <div class="flex min-h-[52px] items-center rounded-2xl border border-sky-200 bg-sky-50/60 px-4 text-sm font-semibold text-sky-800">
+                                    {{ $forcedDivision }}
+                                </div>
+                            @else
+                                <select name="division" class="{{ $attendanceFilterFieldClass }}">
+                                    <option value="">Semua</option>
+                                    @foreach ($divisionOptions as $division)
+                                        <option value="{{ $division }}" @selected(($selectedDivision ?? null) === $division)>{{ $division === $emptyFilterValue ? 'Tanpa Data' : $division }}</option>
+                                    @endforeach
+                                </select>
+                            @endif
+                        </div>
+                    @endif
+
+                    <div class="attendance-summary-filter-panel">
+                        <label class="{{ $attendanceFilterLabelClass }}">Filter Attendance %</label>
+                        <select name="attendance_rate_filter" class="{{ $attendanceFilterFieldClass }}">
+                            <option value="" @selected(($selectedAttendanceRateFilter ?? '') === '')>Semua</option>
                             <option value="gte_90" @selected(($selectedAttendanceRateFilter ?? '') === 'gte_90')>Baik</option>
                             <option value="lt_90" @selected(($selectedAttendanceRateFilter ?? '') === 'lt_90')>Perlu Perhatian</option>
                         </select>
 
                         <div class="mt-4">
-                            <label class="mb-2 block text-sm font-medium text-slate-700">Gaji</label>
-                            <select name="pay_freq" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
-                                <option value="">Semua Gaji</option>
+                            <label class="{{ $attendanceFilterLabelClass }}">Gaji</label>
+                            <select name="pay_freq" class="{{ $attendanceFilterFieldClass }}">
+                                <option value="">Semua</option>
                                 @foreach ($payFrequencies as $payFrequency)
                                     <option value="{{ $payFrequency }}" @selected(($selectedPayFrequencyFilter ?? '') === $payFrequency)>
                                         {{ $payFrequency }}
@@ -228,15 +214,15 @@
                         </div>
                     </div>
 
-                    <div class="rounded-[1.4rem] border border-slate-200 bg-slate-50/70 p-4">
-                        <label class="mb-2 block text-sm font-medium text-slate-700">Position</label>
+                    <div class="attendance-summary-filter-panel">
+                        <label class="{{ $attendanceFilterLabelClass }}">Position</label>
                         <details class="group relative z-30" x-data="{ search: '' }">
-                            <summary class="flex cursor-pointer list-none items-center justify-between rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-slate-700 transition hover:border-blue-300 group-open:border-blue-400 group-open:ring-4 group-open:ring-blue-100">
-                                <span class="truncate">{{ $multiSelectSummary($selectedPositionFilters, 'Semua Position') }}</span>
-                                <span class="ml-3 text-blue-500 transition group-open:rotate-180">v</span>
+                            <summary class="attendance-summary-select-trigger">
+                                <span class="truncate">{{ $multiSelectSummary($selectedPositionFilters, 'Semua') }}</span>
+                                <span class="ml-3 text-sky-500 transition group-open:rotate-180">v</span>
                             </summary>
 
-                            <div class="mt-2 rounded-2xl border border-blue-100 bg-white p-3 shadow-xl shadow-blue-100/70">
+                            <div class="attendance-summary-dropdown">
                                 <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
                                     <span class="text-xs text-slate-500">Pilih satu atau beberapa position.</span>
                                     <div class="flex shrink-0 items-center gap-3 text-xs font-semibold">
@@ -254,19 +240,19 @@
                                         x-model="search"
                                         type="text"
                                         placeholder="Search position"
-                                        class="w-full rounded-xl border border-blue-100 bg-blue-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                                        class="attendance-summary-search-input"
                                     >
                                 </div>
 
                                 <div class="max-h-56 space-y-2 overflow-y-auto pr-1">
                                     @foreach ($positions as $position)
-                                        <label x-show="'{{ str($position)->lower()->replace("'", "\\'") }}'.includes(search.toLowerCase())" class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 transition hover:bg-blue-50/70">
+                                        <label x-show="'{{ str($position)->lower()->replace("'", "\\'") }}'.includes(search.toLowerCase())" class="attendance-summary-option">
                                             <input
                                                 type="checkbox"
                                                 name="position[]"
                                                 value="{{ $position }}"
                                                 @checked(in_array($position, $selectedPositionFilters, true))
-                                                class="h-4 w-4 rounded border-blue-200 text-blue-600 accent-blue-600 focus:ring-blue-400"
+                                                class="attendance-summary-checkbox"
                                             >
                                             <span>{{ $position === $emptyFilterValue ? 'Tanpa Data' : $position }}</span>
                                         </label>
@@ -276,14 +262,14 @@
                         </details>
 
                         <div class="mt-4">
-                            <label class="mb-2 block text-sm font-medium text-slate-700">Area Penempatan</label>
+                            <label class="{{ $attendanceFilterLabelClass }}">Area Penempatan</label>
                             <details class="group relative z-30" x-data="{ search: '' }">
-                                <summary class="flex cursor-pointer list-none items-center justify-between rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 text-sm text-slate-700 transition hover:border-emerald-300 group-open:border-emerald-400 group-open:ring-4 group-open:ring-emerald-100">
-                                    <span class="truncate">{{ $multiSelectSummary($selectedAreaFilters, 'Semua Area Penempatan') }}</span>
-                                    <span class="ml-3 text-emerald-500 transition group-open:rotate-180">v</span>
+                                <summary class="attendance-summary-select-trigger">
+                                    <span class="truncate">{{ $multiSelectSummary($selectedAreaFilters, 'Semua') }}</span>
+                                    <span class="ml-3 text-sky-500 transition group-open:rotate-180">v</span>
                                 </summary>
 
-                                <div class="mt-2 rounded-2xl border border-emerald-100 bg-white p-3 shadow-xl shadow-emerald-100/70">
+                                <div class="attendance-summary-dropdown">
                                     <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
                                         <span class="text-xs text-slate-500">Pilih satu atau beberapa area penempatan.</span>
                                         <div class="flex shrink-0 items-center gap-3 text-xs font-semibold">
@@ -301,19 +287,19 @@
                                             x-model="search"
                                             type="text"
                                             placeholder="Search area penempatan"
-                                            class="w-full rounded-xl border border-emerald-100 bg-emerald-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-emerald-300 focus:ring-4 focus:ring-emerald-100"
+                                            class="attendance-summary-search-input"
                                         >
                                     </div>
 
                                     <div class="max-h-56 space-y-2 overflow-y-auto pr-1">
                                         @foreach ($areas as $area)
-                                            <label x-show="'{{ str($area)->lower()->replace("'", "\\'") }}'.includes(search.toLowerCase())" class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 transition hover:bg-emerald-50/70">
+                                            <label x-show="'{{ str($area)->lower()->replace("'", "\\'") }}'.includes(search.toLowerCase())" class="attendance-summary-option">
                                                 <input
                                                     type="checkbox"
                                                     name="area[]"
                                                     value="{{ $area }}"
                                                     @checked(in_array($area, $selectedAreaFilters, true))
-                                                    class="h-4 w-4 rounded border-emerald-200 text-emerald-600 accent-emerald-600 focus:ring-emerald-400"
+                                                    class="attendance-summary-checkbox"
                                                 >
                                                 <span>{{ $area === $emptyFilterValue ? 'Tanpa Data' : $area }}</span>
                                             </label>
@@ -324,10 +310,10 @@
                         </div>
                     </div>
 
-                    <div class="rounded-[1.4rem] border border-slate-200 bg-slate-50/70 p-4">
-                        <label class="mb-2 block text-sm font-medium text-slate-700">Area Manager</label>
-                        <select name="area_manager" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
-                            <option value="">Semua Area Manager</option>
+                    <div class="attendance-summary-filter-panel">
+                        <label class="{{ $attendanceFilterLabelClass }}">Area Manager</label>
+                        <select name="area_manager" class="{{ $attendanceFilterFieldClass }}">
+                            <option value="">Semua</option>
                             @foreach ($areaManagers as $areaManager)
                                 <option value="{{ $areaManager }}" @selected($selectedAreaManager === $areaManager)>
                                     {{ $areaManager === $emptyFilterValue ? 'Tanpa Data' : $areaManager }}
@@ -336,9 +322,9 @@
                         </select>
 
                         <div class="mt-4">
-                            <label class="mb-2 block text-sm font-medium text-slate-700">Operation Manager</label>
-                            <select name="operation_manager" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
-                                <option value="">Semua Operation Manager</option>
+                            <label class="{{ $attendanceFilterLabelClass }}">Operation Manager</label>
+                            <select name="operation_manager" class="{{ $attendanceFilterFieldClass }}">
+                                <option value="">Semua</option>
                                 @foreach ($operationManagers as $operationManager)
                                     <option value="{{ $operationManager }}" @selected($selectedOperationManager === $operationManager)>
                                         {{ $operationManager === $emptyFilterValue ? 'Tanpa Data' : $operationManager }}
@@ -347,30 +333,28 @@
                             </select>
                         </div>
                     </div>
+                </div>
 
-                    <div class="md:col-span-2 xl:col-span-4">
-                        <div class="flex flex-wrap items-center justify-end gap-3 rounded-[1.4rem] border border-slate-200 bg-slate-50/70 p-4">
-                            <a
-                                href="{{ route('attendance.summary', ['company' => $selectedCompany ?? 'servanda', 'month' => $selectedMonth, 'year' => $selectedYear, 'per_page' => $selectedPerPage ?? 10]) }}"
-                                class="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-100"
-                            >
-                                Reset Filter
-                            </a>
-                            <button
-                                type="submit"
-                                class="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-                            >
-                                Terapkan Filter
-                            </button>
-                        </div>
-                    </div>
-                </form>
+                <div class="attendance-summary-filter-actions">
+                    <a
+                        href="{{ $attendanceResetUrl }}"
+                        class="inline-flex h-[48px] items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
+                    >
+                        Reset Filter
+                    </a>
+                    <button
+                        type="submit"
+                        class="inline-flex h-[48px] items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+                    >
+                        Terapkan Filter
+                    </button>
+                </div>
             </div>
-        </div>
+        </form>
 
-        <div class="overflow-x-auto">
-            <table class="min-w-full text-sm">
-                <thead class="bg-slate-50 text-slate-600">
+        <div class="mt-6 overflow-x-auto">
+            <table class="attendance-summary-table min-w-full text-sm">
+                <thead class="text-slate-600">
                     <tr>
                         <th class="px-6 py-4 text-left font-semibold uppercase tracking-[0.12em]">Employee</th>
                         <th class="px-4 py-4 text-left font-semibold uppercase tracking-[0.12em]">Position</th>
@@ -382,7 +366,7 @@
                         <th class="px-4 py-4 text-center font-semibold uppercase tracking-[0.12em]">Attendance %</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100 bg-white">
+                <tbody>
                     @forelse ($reports as $report)
                         <tr>
                             <td class="px-6 py-4">

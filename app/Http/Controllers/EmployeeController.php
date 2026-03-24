@@ -49,6 +49,13 @@ class EmployeeController extends Controller
 
         $selectedCompany = $this->resolveCompanyKey($request->query('company'));
         $selectedDivision = $this->resolveServandaDivisionFilter($selectedCompany, $request->query('division'));
+        $selectedPerPage = (int) $request->query('per_page', 10);
+        $selectedToolbarArea = trim((string) $request->query('toolbar_area', ''));
+
+        if (! in_array($selectedPerPage, [10, 50, 100], true)) {
+            $selectedPerPage = 10;
+        }
+
         $companyName = self::COMPANY_OPTIONS[$selectedCompany]['label'];
         $query = $this->newEmployeeQuery($selectedCompany, $request);
 
@@ -56,6 +63,20 @@ class EmployeeController extends Controller
 
         $employees = $query->orderBy('nama')->get();
         $employees = $this->filterByContractStatus($employees, $request->input('contract_status', []));
+        $toolbarAreas = $employees
+            ->pluck('area')
+            ->map(fn ($area) => trim((string) $area))
+            ->filter(fn ($area) => filled($area))
+            ->unique(fn ($area) => strtolower($area))
+            ->sortBy(fn ($area) => strtolower($area))
+            ->values();
+
+        if ($selectedToolbarArea !== '') {
+            $employees = $employees
+                ->filter(fn ($employee) => trim((string) ($employee->area ?? '')) === $selectedToolbarArea)
+                ->values();
+        }
+
         $employees = $this->paginateEmployees($employees, $request);
 
         $positions = $this->appendEmptyFilterOption(
@@ -99,9 +120,11 @@ class EmployeeController extends Controller
             'payFrequencies',
             'statuses',
             'contractStatuses',
+            'toolbarAreas',
             'selectedCompany',
             'companyName',
-            'selectedDivision'
+            'selectedDivision',
+            'selectedPerPage'
         ));
     }
 
@@ -445,19 +468,47 @@ class EmployeeController extends Controller
             ->when($selectedAreaManager !== '', fn ($query) => $query->where('area_manager', $selectedAreaManager))
             ->when($selectedOperationManager !== '', fn ($query) => $query->where('operation_manager', $selectedOperationManager))
             ->when($selectedStatus !== '', fn ($query) => $query->where('status', $selectedStatus))
-            ->orderBy('area_name')
-            ->get();
+            ->orderBy('area_name');
 
         $fileName = 'site-area-export-' . $selectedCompany . '-' . now()->format('Y-m-d_H-i-s') . '.xls';
-        $html = view('dashboard.site-area-export', compact(
-            'siteAreas',
-            'selectedCompany',
-            'companyName',
-            'selectedDivision',
-            'selectedBranch'
-        ))->render();
+        $controller = $this;
 
-        return response($html, 200, [
+        return response()->streamDownload(function () use ($siteAreas, $selectedCompany, $companyName, $controller) {
+            $escape = static fn ($value) => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+
+            echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Site Area Export</title></head><body>';
+            echo '<table border="1"><thead>';
+            echo '<tr><th colspan="8">Site Area ' . $escape($companyName) . '</th></tr>';
+            echo '<tr>';
+            echo '<th>No</th><th>Nama Area</th><th>Division</th><th>Cabang</th><th>Area Manager</th><th>Operation Manager</th><th>Status</th><th>Company</th>';
+            echo '</tr></thead><tbody>';
+
+            $rowIndex = 0;
+            $hasRows = false;
+
+            $siteAreas->chunk(500, function ($rows) use (&$rowIndex, &$hasRows, $escape, $selectedCompany) {
+                foreach ($rows as $siteArea) {
+                    $hasRows = true;
+                    $rowIndex++;
+                    echo '<tr>';
+                    echo '<td>' . $rowIndex . '</td>';
+                    echo '<td>' . $escape($siteArea->area_name) . '</td>';
+                    echo '<td>' . $escape($siteArea->division ?: '-') . '</td>';
+                    echo '<td>' . $escape($siteArea->branch ?: '-') . '</td>';
+                    echo '<td>' . $escape($siteArea->area_manager ?: '-') . '</td>';
+                    echo '<td>' . $escape($siteArea->operation_manager ?: '-') . '</td>';
+                    echo '<td>' . $escape($siteArea->status ?: '-') . '</td>';
+                    echo '<td>' . $escape(strtoupper((string) $selectedCompany)) . '</td>';
+                    echo '</tr>';
+                }
+            });
+
+            if (! $hasRows) {
+                echo '<tr><td colspan="8">Tidak ada data site area.</td></tr>';
+            }
+
+            echo '</tbody></table></body></html>';
+        }, $fileName, [
             'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
         ]);
@@ -478,7 +529,7 @@ class EmployeeController extends Controller
             ->when($selectedOperationManager !== '', fn ($query) => $query->where('operation_manager', $selectedOperationManager))
             ->when($selectedStatus !== '', fn ($query) => $query->where('status', $selectedStatus))
             ->orderBy('area_name')
-            ->get([
+            ->select([
                 'id',
                 'company',
                 'area_name',
@@ -489,28 +540,28 @@ class EmployeeController extends Controller
                 'status',
             ]);
 
-        $rows = $siteAreas->map(fn ($siteArea) => [
-            'id' => $siteArea->id,
-            'company' => $siteArea->company,
-            'area_name' => $siteArea->area_name,
-            'division' => $siteArea->division,
-            'branch' => $siteArea->branch,
-            'area_manager' => $siteArea->area_manager,
-            'operation_manager' => $siteArea->operation_manager,
-            'status' => $siteArea->status,
-        ])->all();
-
         $fileName = 'site-area-template-' . $selectedCompany . '-' . now()->format('Y-m-d_H-i-s') . '.csv';
 
-        return response()->streamDownload(function () use ($rows) {
+        return response()->streamDownload(function () use ($siteAreas) {
             $handle = fopen('php://output', 'w');
 
             fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
             fputcsv($handle, ['id', 'company', 'area_name', 'division', 'branch', 'area_manager', 'operation_manager', 'status']);
 
-            foreach ($rows as $row) {
-                fputcsv($handle, $row);
-            }
+            $siteAreas->chunk(500, function ($rows) use ($handle) {
+                foreach ($rows as $siteArea) {
+                    fputcsv($handle, [
+                        $siteArea->id,
+                        $siteArea->company,
+                        $siteArea->area_name,
+                        $siteArea->division,
+                        $siteArea->branch,
+                        $siteArea->area_manager,
+                        $siteArea->operation_manager,
+                        $siteArea->status,
+                    ]);
+                }
+            });
 
             fclose($handle);
         }, $fileName, [
@@ -645,13 +696,68 @@ class EmployeeController extends Controller
 
         $this->applyFilters($query, $request, $selectedCompany);
 
-        $employees = $query->orderBy('nama')->get();
-        $employees = $this->filterByContractStatus($employees, $request->input('contract_status', []));
-
+        $selectedStatuses = collect(is_array($request->input('contract_status', [])) ? $request->input('contract_status', []) : [$request->input('contract_status')])
+            ->filter(fn ($value) => filled($value))
+            ->values();
+        $isServanda = $selectedCompany === 'servanda';
         $fileName = 'employee-export-' . now()->format('Y-m-d_H-i-s') . '.xls';
-        $html = view('dashboard.employee-export', compact('employees', 'selectedCompany', 'companyName'))->render();
 
-        return response($html, 200, [
+        return response()->streamDownload(function () use ($query, $selectedStatuses, $isServanda, $companyName) {
+            $escape = static fn ($value) => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+            $controller = $this;
+
+            echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Employee Export</title></head><body>';
+            echo '<h3>Daftar Pegawai - ' . $escape($companyName) . '</h3>';
+            echo '<table border="1"><thead>';
+
+            if ($isServanda) {
+                echo '<tr>';
+                echo '<th>Nama</th><th>Employee No.</th><th>Position</th><th>Pay Freq</th><th>Jenis Kelamin</th><th>Area Penempatan</th><th>Tanggal Lahir</th><th>Start Date</th><th>End Date</th><th>Status Kontrak</th><th>Status</th>';
+                echo '</tr>';
+            } else {
+                echo '<tr>';
+                echo '<th>Nama</th><th>Employee No.</th><th>Position</th><th>Pay Freq</th><th>Jenis Kelamin</th><th>Area Penempatan</th><th>Tanggal Lahir</th><th>Start Date</th><th>End Date</th><th>Status Kontrak</th><th>Termination</th><th>Status</th>';
+                echo '</tr>';
+            }
+
+            echo '</thead><tbody>';
+
+            $query->orderBy('nama')->chunk(500, function ($employees) use ($selectedStatuses, $isServanda, $controller, $escape) {
+                foreach ($employees as $employee) {
+                    if ($selectedStatuses->isNotEmpty()) {
+                        $resolvedStatus = $controller->resolveContractStatus($employee->end_date);
+
+                        if ($resolvedStatus === null && $selectedStatuses->contains(self::EMPTY_FILTER_VALUE)) {
+                            // keep
+                        } elseif (! $selectedStatuses->contains($resolvedStatus)) {
+                            continue;
+                        }
+                    }
+
+                    $contractLabel = $controller->formatContractStatusLabel($employee->end_date);
+                    echo '<tr>';
+                    echo '<td>' . $escape($employee->nama) . '</td>';
+                    echo '<td>' . $escape($employee->employee_no) . '</td>';
+                    echo '<td>' . $escape($employee->position) . '</td>';
+                    echo '<td>' . $escape($employee->pay_freq) . '</td>';
+                    echo '<td>' . $escape($employee->jenis_kelamin) . '</td>';
+                    echo '<td>' . $escape($employee->area) . '</td>';
+                    echo '<td>' . $escape($employee->tanggal_lahir) . '</td>';
+                    echo '<td>' . $escape($employee->start_date) . '</td>';
+                    echo '<td>' . $escape($employee->end_date) . '</td>';
+                    echo '<td>' . $escape($contractLabel) . '</td>';
+
+                    if (! $isServanda) {
+                        echo '<td>' . $escape($employee->termination_date) . '</td>';
+                    }
+
+                    echo '<td>' . $escape($employee->status) . '</td>';
+                    echo '</tr>';
+                }
+            });
+
+            echo '</tbody></table></body></html>';
+        }, $fileName, [
             'Content-Type' => 'application/vnd.ms-excel; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
         ]);
@@ -667,40 +773,52 @@ class EmployeeController extends Controller
 
         $this->applyFilters($query, $request, $selectedCompany, $selectedDivision);
 
-        $employees = $query->orderBy('nama')->get();
-        $employees = $this->filterByContractStatus($employees, $request->input('contract_status', []));
         $headers = $this->employeeImportHeaders($selectedCompany);
+        $selectedStatuses = collect(is_array($request->input('contract_status', [])) ? $request->input('contract_status', []) : [$request->input('contract_status')])
+            ->filter(fn ($value) => filled($value))
+            ->values();
 
-        fputcsv($handle, $headers);
+        return response()->streamDownload(function () use ($query, $headers, $selectedCompany, $selectedStatuses) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, $headers);
 
-        foreach ($employees as $employee) {
-            $row = [
-                $employee->employee_no ?? '',
-                $employee->nama ?? '',
-                $employee->position ?? '',
-                $employee->pay_freq ?? '',
-                $employee->status ?? '',
-            ];
+            $query->orderBy('nama')->chunk(500, function ($employees) use ($handle, $selectedCompany, $selectedStatuses) {
+                foreach ($employees as $employee) {
+                    if ($selectedStatuses->isNotEmpty()) {
+                        $resolvedStatus = $this->resolveContractStatus($employee->end_date);
 
-            if ($selectedCompany === 'servanda') {
-                $row = array_merge($row, [
-                    $employee->site_area_ss ?? '',
-                    $employee->site_area_cfs ?? '',
-                    $employee->site_area_cs_bpp ?? '',
-                    $employee->site_area_ss_bpp ?? '',
-                ]);
-            } else {
-                $row[] = $employee->area ?? '';
-            }
+                        if ($resolvedStatus === null && $selectedStatuses->contains(self::EMPTY_FILTER_VALUE)) {
+                            // keep
+                        } elseif (! $selectedStatuses->contains($resolvedStatus)) {
+                            continue;
+                        }
+                    }
 
-            fputcsv($handle, $row);
-        }
+                    $row = [
+                        $employee->employee_no ?? '',
+                        $employee->nama ?? '',
+                        $employee->position ?? '',
+                        $employee->pay_freq ?? '',
+                        $employee->status ?? '',
+                    ];
 
-        rewind($handle);
-        $content = stream_get_contents($handle) ?: '';
-        fclose($handle);
+                    if ($selectedCompany === 'servanda') {
+                        $row = array_merge($row, [
+                            $employee->site_area_ss ?? '',
+                            $employee->site_area_cfs ?? '',
+                            $employee->site_area_cs_bpp ?? '',
+                            $employee->site_area_ss_bpp ?? '',
+                        ]);
+                    } else {
+                        $row[] = $employee->area ?? '';
+                    }
 
-        return response($content, 200, [
+                    fputcsv($handle, $row);
+                }
+            });
+
+            fclose($handle);
+        }, $fileName, [
             'Content-Type' => 'text/csv; charset=UTF-8',
             'Content-Disposition' => 'attachment; filename="' . $fileName . '"',
         ]);
@@ -1175,9 +1293,47 @@ class EmployeeController extends Controller
         return 'Perhatian';
     }
 
+    private function formatContractStatusLabel($endDate): string
+    {
+        if (blank($endDate)) {
+            return '-';
+        }
+
+        try {
+            $today = Carbon::today();
+            $end = Carbon::parse($endDate)->startOfDay();
+        } catch (\Throwable $e) {
+            return '-';
+        }
+
+        if ($end->lt($today)) {
+            return 'Expired';
+        }
+
+        $daysRemaining = $today->diffInDays($end);
+
+        if ($daysRemaining < 30) {
+            return 'Menjelang Berakhir (' . $daysRemaining . ' hari)';
+        }
+
+        $monthsRemaining = max(1, round($daysRemaining / 30, 1));
+        $formattedMonthsRemaining = str_replace('.', ',', rtrim(rtrim(number_format($monthsRemaining, 1, '.', ''), '0'), '.'));
+
+        if ($end->gt($today->copy()->addMonths(3))) {
+            return 'Aman (' . $formattedMonthsRemaining . ' bulan)';
+        }
+
+        return 'Perhatian (' . $formattedMonthsRemaining . ' bulan)';
+    }
+
     private function paginateEmployees(Collection $employees, Request $request): LengthAwarePaginator
     {
-        $perPage = 15;
+        $perPage = (int) $request->query('per_page', 10);
+
+        if (! in_array($perPage, [10, 50, 100], true)) {
+            $perPage = 10;
+        }
+
         $page = LengthAwarePaginator::resolveCurrentPage();
         $items = $employees->slice(($page - 1) * $perPage, $perPage)->values();
 

@@ -83,25 +83,23 @@
             </div>
         @endif
 
-        <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div class="user-header">
             <div class="max-w-3xl">
-                <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-sky-700">Settings User</p>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Settings User</p>
                 <h2 class="mt-2 text-3xl font-bold tracking-tight text-slate-900">User Management</h2>
-                <p class="mt-3 text-sm leading-7 text-slate-500">
+                <p class="mt-2 text-[13px] leading-7 text-slate-400">
                     Halaman ini menampilkan master user beserta akses company, division, position, status, dan role rules.
                 </p>
             </div>
 
-            <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-                <article class="dashboard-card border border-slate-200 bg-white">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Total User</p>
-                    <p class="mt-4 text-3xl font-bold tracking-tight text-slate-900">{{ number_format($totalUsers ?? 0) }}</p>
-                </article>
+            <div class="user-total-card">
+                <span class="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Total User</span>
+                <span class="text-2xl font-bold text-slate-900">{{ number_format($totalUsers ?? 0) }}</span>
             </div>
         </div>
 
         <section class="dashboard-card border border-slate-200 bg-white">
-            <div class="flex flex-col gap-4 border-b border-slate-200 pb-4 lg:flex-row lg:items-end lg:justify-between">
+            <div class="user-table-header">
                 <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">User Table</p>
                     <h3 class="text-xl font-semibold text-slate-900">Tabel User</h3>
@@ -111,27 +109,36 @@
                 <button
                     type="button"
                     @click="openCreate()"
-                    class="inline-flex h-[48px] items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500"
+                    class="user-add-button"
                 >
+                    <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-white">+</span>
                     Tambah User
                 </button>
             </div>
 
-            <form method="GET" action="{{ route('settings.users.index') }}" class="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-slate-700">Search User</label>
-                    <input
-                        x-model="userSearch"
-                        type="text"
-                        name="search"
-                        placeholder="Cari nama, username, divisi, company, position, rules..."
-                        class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-300 focus:bg-white"
-                    >
+            <form method="GET" action="{{ route('settings.users.index') }}" class="user-table-toolbar">
+                <div class="user-search-field">
+                    <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Search User</label>
+                    <div class="relative">
+                        <span class="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="11" cy="11" r="8" />
+                                <path d="m21 21-4.3-4.3" />
+                            </svg>
+                        </span>
+                        <input
+                            x-model="userSearch"
+                            type="text"
+                            name="search"
+                            placeholder="Cari nama, username, divisi, company, position..."
+                            class="user-input"
+                        >
+                    </div>
                 </div>
 
-                <div>
-                    <label class="mb-2 block text-sm font-medium text-slate-700">Divisi</label>
-                    <select name="division" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm">
+                <div class="user-filter-field">
+                    <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Divisi</label>
+                    <select name="division" onchange="this.form.submit()" class="user-input">
                         <option value="">Semua</option>
                         <option value="Cleaning" @selected($selectedDivisionFilter === 'Cleaning')>Cleaning</option>
                         <option value="Security" @selected($selectedDivisionFilter === 'Security')>Security</option>
@@ -140,16 +147,16 @@
                 </div>
             </form>
 
-            <div class="mt-5 overflow-x-auto">
-                <table class="min-w-full border-separate border-spacing-y-2">
+            <div class="mt-6 overflow-x-auto">
+                <table class="user-table min-w-full border-separate border-spacing-y-2">
                     <thead>
                         <tr>
-                            <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">No</th>
+                            <th class="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">No</th>
                             <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Nama / Username</th>
                             <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Divisi</th>
                             <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Nama PT</th>
                             <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Position</th>
-                            <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Status</th>
+                            <th class="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Status</th>
                             <th class="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Rules</th>
                             <th class="px-4 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Action</th>
                         </tr>
@@ -177,8 +184,8 @@
                                     $user->access_role,
                                 ])));
                             @endphp
-                            <tr x-show="@js($searchTarget).includes(userSearch.toLowerCase())" x-transition.opacity class="rounded-2xl bg-slate-50/80 shadow-sm">
-                                <td class="rounded-l-2xl px-4 py-4 align-top text-sm font-medium text-slate-700">{{ $index + 1 }}</td>
+                            <tr x-show="@js($searchTarget).includes(userSearch.toLowerCase())" x-transition.opacity class="user-table-row">
+                                <td class="rounded-l-2xl px-4 py-4 text-center align-top text-sm font-medium text-slate-700">{{ $index + 1 }}</td>
                                 <td class="px-4 py-4 align-top">
                                     <div class="space-y-1">
                                         <p class="text-sm font-semibold text-slate-900">{{ $user->name ?: '-' }}</p>
@@ -189,7 +196,7 @@
                                 <td class="px-4 py-4 align-top text-sm text-slate-700">
                                     <div class="flex flex-wrap gap-2">
                                         @forelse (($user->company_access ?? []) as $company)
-                                            <span class="inline-flex rounded-full bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-700 ring-1 ring-inset ring-sky-200">{{ $company }}</span>
+                                            <span class="badge badge-company">{{ $company }}</span>
                                         @empty
                                             <span>-</span>
                                         @endforelse
@@ -198,33 +205,41 @@
                                 <td class="px-4 py-4 align-top text-sm text-slate-700">
                                     <div class="flex flex-wrap gap-2">
                                         @forelse (($user->position ?? []) as $position)
-                                            <span class="inline-flex rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">{{ $position }}</span>
+                                            <span class="badge badge-role">{{ $position }}</span>
                                         @empty
                                             <span>-</span>
                                         @endforelse
                                     </div>
                                 </td>
-                                <td class="px-4 py-4 align-top text-sm">
-                                    <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold {{ ($user->status ?? '') === 'Aktif' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200' }}">
+                                <td class="px-4 py-4 text-center align-top text-sm">
+                                    <span class="badge badge-status {{ ($user->status ?? '') === 'Aktif' ? 'badge-status-active' : 'badge-status-inactive' }}">
                                         {{ $user->status ?? '-' }}
                                     </span>
                                 </td>
                                 <td class="px-4 py-4 align-top text-sm text-slate-700">
                                     <div class="flex flex-wrap gap-2">
                                         @if (filled($user->access_role))
-                                            <span class="inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">{{ $user->access_role }}</span>
+                                            @php
+                                                $roleLabel = trim((string) $user->access_role);
+                                                $roleTone = match (strtolower($roleLabel)) {
+                                                    'admin', 'administrator' => 'badge-role-admin',
+                                                    'security' => 'badge-role-security',
+                                                    default => 'badge-role',
+                                                };
+                                            @endphp
+                                            <span class="badge {{ $roleTone }}">{{ $roleLabel }}</span>
                                         @else
                                             <span>-</span>
                                         @endif
                                     </div>
                                 </td>
                                 <td class="rounded-r-2xl px-4 py-4 text-center align-top">
-                                    <div class="flex items-center justify-center gap-2">
+                                    <div class="user-action-group">
                                         <form action="{{ route('settings.users.reset-password', $user->id) }}" method="POST" onsubmit="return confirm('Reset password user {{ $user->username }} menjadi Servanda123?');">
                                             @csrf
                                             <button
                                                 type="submit"
-                                                class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100"
+                                                class="user-action-button text-emerald-700"
                                                 title="Reset Password"
                                             >
                                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -237,7 +252,7 @@
                                         <button
                                             type="button"
                                             @click='openEdit(@json($payload))'
-                                            class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-amber-700 transition hover:border-amber-300 hover:bg-amber-100"
+                                            class="user-action-button text-amber-700"
                                             title="Edit"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -248,7 +263,7 @@
                                         <button
                                             type="button"
                                             @click='openDelete(@json($payload))'
-                                            class="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 transition hover:border-rose-300 hover:bg-rose-100"
+                                            class="user-action-button text-rose-700"
                                             title="Hapus"
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">

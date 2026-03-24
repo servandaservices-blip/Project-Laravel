@@ -16,20 +16,46 @@
 <body class="dashboard-shell bg-slate-100 text-slate-800">
     <div
         x-data="{
-            sidebarOpen: true,
+            sidebarOpen: window.innerWidth >= 1024,
             profileOpen: false,
             profileModalOpen: false,
             passwordModalOpen: {{ $hasPasswordToast ? 'true' : 'false' }},
             toastOpen: {{ $hasPasswordToast ? 'true' : 'false' }},
             toastType: @js($passwordToastType),
             toastMessage: @js($passwordToastMessage),
+            screenWidth: window.innerWidth,
+            init() {
+                this.handleResize = this.handleResize.bind(this);
+                window.addEventListener('resize', this.handleResize);
+                this.handleResize();
+            },
+            handleResize() {
+                this.screenWidth = window.innerWidth;
+                if (this.screenWidth < 1024) {
+                    this.sidebarOpen = false;
+                }
+            },
+            destroy() {
+                window.removeEventListener('resize', this.handleResize);
+            }
         }"
-        class="min-h-screen"
+        x-init="init()"
+        class="dashboard-shell-layout"
     >
-        <div class="flex min-h-screen">
+        <div
+            :class="[
+                'dashboard-layout',
+                screenWidth >= 1024
+                    ? (sidebarOpen ? 'layout-desktop-expanded' : 'layout-desktop-collapsed')
+                    : (sidebarOpen ? 'layout-mobile-expanded' : 'layout-mobile-collapsed')
+            ]"
+        >
             <aside
-                :class="sidebarOpen ? 'w-72' : 'w-24'"
-                class="dashboard-sidebar fixed inset-y-0 left-0 z-40 flex flex-col border-r border-white/10 bg-slate-950 text-white transition-all duration-300"
+                :class="[
+                    'dashboard-sidebar',
+                    sidebarOpen ? 'sidebar-expanded' : 'sidebar-collapsed',
+                    screenWidth < 1024 ? 'sidebar-mobile' : 'sidebar-desktop'
+                ]"
             >
                 <div class="flex h-20 items-center gap-3 border-b border-white/10 px-5">
                     <img src="{{ asset('logo.png') }}" alt="Logo" class="h-11 w-11 rounded-xl object-cover shadow-lg">
@@ -50,7 +76,7 @@
                 <div class="border-t border-white/10 p-4">
                     <button
                         @click="sidebarOpen = !sidebarOpen"
-                        class="flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/10"
+                        class="sidebar-collapse-toggle flex w-full items-center justify-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/10"
                     >
                         <span class="sidebar-icon">⇆</span>
                         <span x-show="sidebarOpen" x-transition.opacity>Collapsed View</span>
@@ -59,13 +85,19 @@
             </aside>
 
             <div
-                :class="sidebarOpen ? 'ml-72' : 'ml-24'"
-                class="flex min-h-screen flex-1 flex-col transition-all duration-300"
-            >
+                x-cloak
+                x-show="screenWidth < 1024 && sidebarOpen"
+                class="sidebar-backdrop"
+                @click="sidebarOpen = false"
+            ></div>
+
+            <div class="dashboard-main-wrapper flex min-h-screen flex-1 flex-col">
                 @include('dashboard.partials.topbar')
 
-                <main class="flex-1 px-6 py-8 lg:px-10">
-                    @yield('content')
+                <main class="dashboard-main flex-1 px-6 py-8 lg:px-10">
+                    <div class="dashboard-main-inner">
+                        @yield('content')
+                    </div>
                 </main>
             </div>
         </div>
