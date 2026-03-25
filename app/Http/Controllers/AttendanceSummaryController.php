@@ -26,6 +26,20 @@ class AttendanceSummaryController extends Controller
     private const MASTER_SITE_AREA_TABLE = 'faizal.master_site_areas';
     private const EMPTY_FILTER_VALUE = '__EMPTY__';
 
+    private function resolveValidMonth(mixed $value): int
+    {
+        $month = is_numeric($value) ? (int) $value : now()->month;
+
+        return max(1, min(12, $month));
+    }
+
+    private function resolveValidYear(mixed $value): int
+    {
+        $year = is_numeric($value) ? (int) $value : now()->year;
+
+        return max(2000, min(2100, $year));
+    }
+
     public function dashboardWorkday(Request $request)
     {
         $selectedCompany = $this->resolveCompanyKey($request->query('company'));
@@ -511,8 +525,8 @@ class AttendanceSummaryController extends Controller
         $companyConfig = $this->companyConfig($selectedCompany);
         $summaryModel = $this->summaryModel($selectedCompany);
         $summaryTable = (new $summaryModel())->getTable();
-        $month = (int) ($request->query('month') ?? now()->month);
-        $year = (int) ($request->query('year') ?? now()->year);
+        $month = $this->resolveValidMonth($request->query('month'));
+        $year = $this->resolveValidYear($request->query('year'));
         $period = $periodService->buildPeriod($month, $year);
 
         $baseQuery = $summaryModel::query()
@@ -583,8 +597,8 @@ class AttendanceSummaryController extends Controller
 
     public function index(Request $request, AttendancePeriodService $periodService)
     {
-        $month = (int) ($request->month ?? now()->month);
-        $year = (int) ($request->year ?? now()->year);
+        $month = $this->resolveValidMonth($request->query('month'));
+        $year = $this->resolveValidYear($request->query('year'));
         $perPage = (int) $request->query('per_page', 10);
         $search = trim((string) $request->query('search', ''));
         $attendanceRateFilter = (string) $request->query('attendance_rate_filter', '');
