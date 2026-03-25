@@ -11,7 +11,7 @@
             'gabe' => 'Gabe',
             'salus' => 'Salus',
         ];
-        $divisionOptions = ['Security', 'Cleaning'];
+        $divisionOptions = collect($divisionOptions ?? [])->values();
         $forcedDivision = auth()->user()?->forcedDivision();
         $branchOptions = $branchOptions ?? collect();
         $areaManagers = $areaManagers ?? collect();
@@ -96,81 +96,79 @@
                             '2xl:grid-cols-5' => $selectedCompany !== 'servanda',
                         ])
                     >
-                        <div>
-                            <label class="{{ $workdayFilterLabelClass }}">Nama PT</label>
-                            <select name="company" onchange="this.form.submit()" class="{{ $workdayFilterFieldClass }}">
-                                @foreach ($companyOptions as $companyKey => $companyLabel)
-                                    <option value="{{ $companyKey }}" @selected($selectedCompany === $companyKey)>{{ $companyLabel }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Nama PT"
+                            name="company"
+                            :options="$companyOptions"
+                            :selected="$selectedCompany"
+                            placeholder="Semua"
+                            :field-class="$workdayFilterFieldClass"
+                            :label-class="$workdayFilterLabelClass"
+                        />
 
                         @if ($selectedCompany === 'servanda')
-                            <div>
-                                <label class="{{ $workdayFilterLabelClass }}">Divisi</label>
-                                @if (filled($forcedDivision))
-                                    <input type="hidden" name="division" value="{{ $forcedDivision }}">
-                                    <div class="flex min-h-[52px] items-center rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 text-sm font-semibold text-slate-700 shadow-sm">
-                                        {{ $forcedDivision }}
-                                    </div>
-                                @else
-                                    <select name="division" onchange="this.form.submit()" class="{{ $workdayFilterFieldClass }}">
-                                        <option value="">Semua</option>
-                                        @foreach ($divisionOptions as $division)
-                                            <option value="{{ $division }}" @selected(($selectedDivision ?? null) === $division)>{{ $division }}</option>
-                                        @endforeach
-                                    </select>
-                                @endif
-                            </div>
+                            <x-dashboard.filter-select
+                                label="Divisi"
+                                name="division"
+                                :options="$divisionOptions"
+                                :selected="$selectedDivision"
+                                placeholder="Semua"
+                                :locked="filled($forcedDivision)"
+                                :locked-value="$forcedDivision"
+                                :locked-label="$forcedDivision"
+                                :field-class="$workdayFilterFieldClass"
+                                :label-class="$workdayFilterLabelClass"
+                            />
                         @endif
 
-                        <div>
-                            <label class="{{ $workdayFilterLabelClass }}">Tahun</label>
-                            <select name="year" onchange="this.form.submit()" class="{{ $workdayFilterFieldClass }}">
-                                @foreach ($yearOptions as $year)
-                                    <option value="{{ $year }}" @selected($selectedYear === $year)>{{ $year }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Tahun"
+                            name="year"
+                            :options="$yearOptions"
+                            :selected="$selectedYear"
+                            placeholder="Semua"
+                            :field-class="$workdayFilterFieldClass"
+                            :label-class="$workdayFilterLabelClass"
+                        />
 
-                        <div>
-                            <label class="{{ $workdayFilterLabelClass }}">Cabang</label>
-                            <select name="branch" onchange="this.form.submit()" class="{{ $workdayFilterFieldClass }}">
-                                <option value="">Semua</option>
-                                @foreach ($branchOptions as $branch)
-                                    <option value="{{ $branch }}" @selected(($selectedBranch ?? '') === $branch)>{{ $branch }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Cabang"
+                            name="branch"
+                            :options="$branchOptions"
+                            :selected="$selectedBranch"
+                            placeholder="Semua"
+                            :field-class="$workdayFilterFieldClass"
+                            :label-class="$workdayFilterLabelClass"
+                        />
 
-                        <div>
-                            <label class="{{ $workdayFilterLabelClass }}">Area Manager</label>
-                            <select name="area_manager" onchange="this.form.submit()" class="{{ $workdayFilterFieldClass }}">
-                                <option value="">Semua</option>
-                                @foreach ($areaManagers as $areaManager)
-                                    <option value="{{ $areaManager }}" @selected(($selectedAreaManager ?? '') === $areaManager)>{{ $areaManager }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Area Manager"
+                            name="area_manager"
+                            :options="$areaManagers"
+                            :selected="$selectedAreaManager"
+                            placeholder="Semua"
+                            :field-class="$workdayFilterFieldClass"
+                            :label-class="$workdayFilterLabelClass"
+                        />
 
-                        <div>
-                            <label class="{{ $workdayFilterLabelClass }}">Operation Manager</label>
-                            <select name="operation_manager" onchange="this.form.submit()" class="{{ $workdayFilterFieldClass }}">
-                                <option value="">Semua</option>
-                                @foreach ($operationManagers as $operationManager)
-                                    <option value="{{ $operationManager }}" @selected(($selectedOperationManager ?? '') === $operationManager)>{{ $operationManager }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Operation Manager"
+                            name="operation_manager"
+                            :options="$operationManagers"
+                            :selected="$selectedOperationManager"
+                            placeholder="Semua"
+                            :field-class="$workdayFilterFieldClass"
+                            :label-class="$workdayFilterLabelClass"
+                        />
                     </div>
                 </div>
             </form>
         </section>
 
         <section class="grid gap-6">
-            <div class="dashboard-card min-w-0 overflow-hidden border border-slate-200 bg-white">
-                <div class="workday-summary-grid">
-                    <article class="workday-summary-card border border-sky-100 bg-gradient-to-br from-white via-slate-50 to-sky-50 shadow-sm shadow-sky-100/70">
+            {{-- <div class="dashboard-card min-w-0 overflow-hidden border border-slate-200 bg-white"> --}}
+                {{-- <div class="workday-summary-grid"> --}}
+                    {{-- <article class="workday-summary-card border border-sky-100 bg-gradient-to-br from-white via-slate-50 to-sky-50 shadow-sm shadow-sky-100/70">
                         <h3 class="workday-summary-title text-sky-700">
                             <span class="block">Rata-rata</span>
                             <span class="block">Kehadiran</span>
@@ -183,9 +181,9 @@
                                 {{ $currentMonthLabel }}
                             </span>
                         </div>
-                    </article>
+                    </article> --}}
 
-                    <article class="workday-summary-card border border-sky-100 bg-gradient-to-br from-white via-slate-50 to-sky-50 shadow-sm shadow-sky-100/70">
+                    {{-- <article class="workday-summary-card border border-sky-100 bg-gradient-to-br from-white via-slate-50 to-sky-50 shadow-sm shadow-sky-100/70">
                         <h3 class="workday-summary-title text-sky-700">
                             <span class="block">Target</span>
                             <span class="block">Hari Kerja</span>
@@ -198,9 +196,9 @@
                                 {{ $currentMonthLabel }}
                             </span>
                         </div>
-                    </article>
+                    </article> --}}
 
-                    <article class="workday-summary-card border border-sky-100 bg-gradient-to-br from-white via-slate-50 to-sky-50 shadow-sm shadow-sky-100/70">
+                    {{-- <article class="workday-summary-card border border-sky-100 bg-gradient-to-br from-white via-slate-50 to-sky-50 shadow-sm shadow-sky-100/70">
                         <h3 class="workday-summary-title text-sky-700">
                             <span class="block">Rata-rata</span>
                             <span class="block">Hari Kerja</span>
@@ -213,9 +211,9 @@
                                 {{ $currentMonthLabel }}
                             </span>
                         </div>
-                    </article>
+                    </article> --}}
 
-                    <article class="workday-summary-card border border-sky-100 bg-gradient-to-br from-white via-slate-50 to-sky-50 shadow-sm shadow-sky-100/70">
+                    {{-- <article class="workday-summary-card border border-sky-100 bg-gradient-to-br from-white via-slate-50 to-sky-50 shadow-sm shadow-sky-100/70">
                         <h3 class="workday-summary-title text-sky-700">
                             <span class="block">Rata-rata</span>
                             <span class="block">Jadwal Shift</span>
@@ -228,9 +226,9 @@
                                 {{ $currentMonthLabel }}
                             </span>
                         </div>
-                    </article>
+                    </article> --}}
 
-                    <article class="workday-summary-card border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/70 to-emerald-100/80 shadow-sm shadow-emerald-100/70">
+                    {{-- <article class="workday-summary-card border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/70 to-emerald-100/80 shadow-sm shadow-emerald-100/70">
                         <div class="workday-summary-top">
                             <h3 class="workday-summary-title text-emerald-700">
                                 <span class="block">Bulan</span>
@@ -246,9 +244,9 @@
                                 Tertinggi
                             </span>
                         </div>
-                    </article>
+                    </article> --}}
 
-                    <article class="workday-summary-card border border-rose-100 bg-gradient-to-br from-white via-rose-50/70 to-rose-100/80 shadow-sm shadow-rose-100/70">
+                    {{-- <article class="workday-summary-card border border-rose-100 bg-gradient-to-br from-white via-rose-50/70 to-rose-100/80 shadow-sm shadow-rose-100/70">
                         <div class="workday-summary-top">
                             <h3 class="workday-summary-title text-rose-700">
                                 <span class="block">Bulan</span>
@@ -264,8 +262,8 @@
                                 Terendah
                             </span>
                         </div>
-                    </article>
-                </div>
+                    </article> --}}
+                {{-- </div>
 
                 <div class="mt-6 border-t border-slate-100 pt-5">
                     <h3 class="text-lg font-semibold tracking-tight text-slate-900">Tren Rata-rata Kehadiran per Bulan</h3>
@@ -276,7 +274,7 @@
                         <canvas id="workdayLineChart"></canvas>
                     </div>
                 </div>
-            </div>
+            </div> --}}
 
         </section>
 

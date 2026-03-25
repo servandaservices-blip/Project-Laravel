@@ -53,7 +53,7 @@ class UserController extends Controller
             'divisionOptions' => ['Cleaning', 'Security'],
             'statusOptions' => ['Aktif', 'Tidak Aktif'],
             'positionOptions' => $positionOptions,
-            'ruleOptions' => ['Cleaning', 'Security', 'Cleaning & Security', 'Administrator'],
+            'ruleOptions' => ['Cleaning', 'Security', 'Cleaning - Costcontrol', 'Security - Costcontrol', 'Cleaning & Security', 'Administrator'],
         ]);
     }
 
@@ -68,13 +68,13 @@ class UserController extends Controller
             'position' => ['nullable', 'array'],
             'position.*' => ['string', 'max:150'],
             'status' => ['required', Rule::in(['Aktif', 'Tidak Aktif'])],
-            'rules' => ['required', Rule::in(['Cleaning', 'Security', 'Cleaning & Security', 'Administrator'])],
+            'rules' => ['required', Rule::in(['Cleaning', 'Security', 'Cleaning - Costcontrol', 'Security - Costcontrol', 'Cleaning & Security', 'Administrator'])],
         ]);
 
         $division = $validated['division'] ?? null;
 
-        if (in_array($validated['rules'], ['Cleaning', 'Security'], true)) {
-            $division = $validated['rules'];
+        if (in_array($validated['rules'], ['Cleaning', 'Security', 'Cleaning - Costcontrol', 'Security - Costcontrol'], true)) {
+            $division = str_contains($validated['rules'], 'Security') ? 'Security' : 'Cleaning';
         }
 
         User::query()->create([
@@ -106,14 +106,14 @@ class UserController extends Controller
             'position' => ['nullable', 'array'],
             'position.*' => ['string', 'max:150'],
             'status' => ['required', Rule::in(['Aktif', 'Tidak Aktif'])],
-            'rules' => ['required', Rule::in(['Cleaning', 'Security', 'Cleaning & Security', 'Administrator'])],
+            'rules' => ['required', Rule::in(['Cleaning', 'Security', 'Cleaning - Costcontrol', 'Security - Costcontrol', 'Cleaning & Security', 'Administrator'])],
             'password' => ['nullable', 'string', 'min:6'],
         ]);
 
         $division = $validated['division'] ?? null;
 
-        if (in_array($validated['rules'], ['Cleaning', 'Security'], true)) {
-            $division = $validated['rules'];
+        if (in_array($validated['rules'], ['Cleaning', 'Security', 'Cleaning - Costcontrol', 'Security - Costcontrol'], true)) {
+            $division = str_contains($validated['rules'], 'Security') ? 'Security' : 'Cleaning';
         }
 
         $payload = [

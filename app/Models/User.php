@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Support\Str;
 
 class User extends Authenticatable
 {
@@ -52,11 +53,27 @@ class User extends Authenticatable
         return $this->access_role === 'Administrator';
     }
 
+    public function isTargetAccessibleRole(): bool
+    {
+        return in_array($this->access_role, [
+            'Administrator',
+            'Cleaning - Costcontrol',
+            'Security - Costcontrol',
+        ], true);
+    }
+
+    public function canAccessTargetMenu(): bool
+    {
+        return $this->isTargetAccessibleRole();
+    }
+
     public function forcedDivision(): ?string
     {
         return match ($this->access_role) {
             'Cleaning' => 'Cleaning',
             'Security' => 'Security',
+            'Cleaning - Costcontrol' => 'Cleaning',
+            'Security - Costcontrol' => 'Security',
             default => null,
         };
     }
@@ -66,6 +83,8 @@ class User extends Authenticatable
         return match ($this->access_role) {
             'Cleaning' => ['Cleaning'],
             'Security' => ['Security'],
+            'Cleaning - Costcontrol' => ['Cleaning'],
+            'Security - Costcontrol' => ['Security'],
             'Cleaning & Security' => ['Cleaning', 'Security'],
             default => ['Security', 'Cleaning'],
         };
@@ -98,5 +117,81 @@ class User extends Authenticatable
         }
 
         return in_array($company, $allowedCompanies, true);
+    }
+
+    public function areaManagerScopeName(): ?string
+    {
+        if ($this->isAdministrator() || ! $this->isAreaManagerRole()) {
+            return null;
+        }
+
+        $positions = collect(is_array($this->position) ? $this->position : [$this->position])
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn ($value) => $value !== '')
+            ->values();
+
+        $hasManagerRole = $positions->contains(function (string $value) {
+            $normalized = Str::lower($value);
+
+            return Str::contains($normalized, ['area manager', 'area commander', '(am)', '(ac)']);
+        });
+
+        if (! $hasManagerRole) {
+            return null;
+        }
+
+        $name = trim((string) $this->name);
+
+        return $name !== '' ? $name : null;
+    }
+
+    public function operationManagerScopeName(): ?string
+    {
+        if ($this->isAdministrator() || ! $this->isOperationManagerRole()) {
+            return null;
+        }
+
+        $name = trim((string) $this->name);
+
+        return $name !== '' ? $name : null;
+    }
+
+    public function isAreaManagerRole(): bool
+    {
+        return $this->matchesPositionKeywords(['area manager', 'area commander', '(am)', '(ac)']);
+    }
+
+    public function isOperationManagerRole(): bool
+    {
+        return $this->matchesPositionKeywords([
+            'operation manager',
+            'operation commander',
+            'senior operation manager',
+            'senior operation commander',
+            '(om)',
+            '(oc)',
+            '(som)',
+            '(soc)',
+        ]);
+    }
+
+    private function matchesPositionKeywords(array $keywords): bool
+    {
+        $positions = collect(is_array($this->position) ? $this->position : [$this->position])
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn ($value) => $value !== '')
+            ->values();
+
+        return $positions->contains(function (string $value) use ($keywords) {
+            $normalized = Str::lower($value);
+
+            foreach ($keywords as $keyword) {
+                if (Str::contains($normalized, $keyword)) {
+                    return true;
+                }
+            }
+
+            return false;
+        });
     }
 }

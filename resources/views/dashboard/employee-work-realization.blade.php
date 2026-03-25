@@ -16,105 +16,76 @@
         </div>
 
         <form method="GET" action="{{ route('employee.work-realization') }}" class="mt-6">
-            <div class="rounded-3xl border border-slate-200 bg-white p-5">
+            <div class="employee-filter-card rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-blue-50/60 p-5 shadow-sm">
                 <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <div>
-                        <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Nama PT</label>
-                        <select name="company" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
-                            @foreach (($companyOptions ?? []) as $companyKey => $company)
-                                <option value="{{ $companyKey }}" @selected(($selectedCompany ?? 'servanda') === $companyKey)>{{ $company['label'] }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-dashboard.filter-select
+                        label="Nama PT"
+                        name="company"
+                        :options="collect($companyOptions ?? [])->mapWithKeys(fn ($company, $key) => [$key => $company['label']])"
+                        :selected="$selectedCompany ?? 'servanda'"
+                        placeholder="Semua"
+                    />
 
                     @if (($selectedCompany ?? 'servanda') === 'servanda')
-                        <div>
-                            <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Divisi</label>
-                            @if (filled($forcedDivision))
-                                <input type="hidden" name="division" value="{{ $forcedDivision }}">
-                                <div class="flex h-[50px] items-center rounded-2xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-800">
-                                    {{ $forcedDivision }}
-                                </div>
-                            @else
-                                <select name="division" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
-                                    <option value="">Semua Divisi</option>
-                                    @foreach (($divisionOptions ?? collect()) as $division)
-                                        <option value="{{ $division }}" @selected(($selectedDivision ?? '') === $division)>
-                                            {{ $division === $emptyFilterValue ? 'Tanpa Data' : $division }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                            @endif
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Divisi"
+                            name="division"
+                            :options="collect($divisionOptions ?? collect())->map(fn ($division) => $division === $emptyFilterValue ? 'Tanpa Data' : $division)"
+                            :selected="$selectedDivision ?? ''"
+                            placeholder="Semua"
+                            :locked="filled($forcedDivision)"
+                            :locked-value="$forcedDivision"
+                            :locked-label="$forcedDivision"
+                        />
                     @endif
 
-                    <div>
-                        <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Position</label>
-                        <select name="position" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
-                            <option value="">Semua Position</option>
-                            @foreach (($positions ?? collect()) as $position)
-                                <option value="{{ $position }}" @selected(($selectedPosition ?? '') === $position)>
-                                    {{ $position === $emptyFilterValue ? 'Tanpa Data' : $position }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-dashboard.filter-select
+                        label="Position"
+                        name="position"
+                        :options="collect($positions ?? collect())->map(fn ($position) => $position === $emptyFilterValue ? 'Tanpa Data' : $position)"
+                        :selected="$selectedPosition ?? ''"
+                        placeholder="Semua"
+                    />
 
-                    <div>
-                        <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Area Penempatan</label>
-                        <select name="area" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
-                            <option value="">Semua Area</option>
-                            @foreach (($areas ?? collect()) as $area)
-                                <option value="{{ $area }}" @selected(($selectedArea ?? '') === $area)>
-                                    {{ $area === $emptyFilterValue ? 'Tanpa Data' : $area }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-dashboard.filter-select
+                        label="Area Penempatan"
+                        name="area"
+                        :options="collect($areas ?? collect())->map(fn ($area) => $area === $emptyFilterValue ? 'Tanpa Data' : $area)"
+                        :selected="$selectedArea ?? ''"
+                        placeholder="Semua"
+                    />
 
-                    <div>
-                        <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Cabang</label>
-                        <select name="branch" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
-                            <option value="">Semua</option>
-                            @foreach (($branches ?? collect()) as $branch)
-                                <option value="{{ $branch }}" @selected(($selectedBranch ?? '') === $branch)>{{ $branch }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-dashboard.filter-select
+                        label="Cabang"
+                        name="branch"
+                        :options="$branches ?? collect()"
+                        :selected="$selectedBranch ?? ''"
+                        placeholder="Semua"
+                    />
 
-                    <div>
-                        <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Area Manager</label>
-                        <select name="area_manager" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
-                            <option value="">Semua Area Manager</option>
-                            @foreach (($areaManagers ?? collect()) as $areaManager)
-                                <option value="{{ $areaManager }}" @selected(($selectedAreaManager ?? '') === $areaManager)>
-                                    {{ $areaManager === $emptyFilterValue ? 'Tanpa Data' : $areaManager }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-dashboard.filter-select
+                        label="Area Manager"
+                        name="area_manager"
+                        :options="collect($areaManagers ?? collect())->map(fn ($areaManager) => $areaManager === $emptyFilterValue ? 'Tanpa Data' : $areaManager)"
+                        :selected="$selectedAreaManager ?? ''"
+                        placeholder="Semua"
+                    />
 
-                    <div>
-                        <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Operation Manager</label>
-                        <select name="operation_manager" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
-                            <option value="">Semua Operation Manager</option>
-                            @foreach (($operationManagers ?? collect()) as $operationManager)
-                                <option value="{{ $operationManager }}" @selected(($selectedOperationManager ?? '') === $operationManager)>
-                                    {{ $operationManager === $emptyFilterValue ? 'Tanpa Data' : $operationManager }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-dashboard.filter-select
+                        label="Operation Manager"
+                        name="operation_manager"
+                        :options="collect($operationManagers ?? collect())->map(fn ($operationManager) => $operationManager === $emptyFilterValue ? 'Tanpa Data' : $operationManager)"
+                        :selected="$selectedOperationManager ?? ''"
+                        placeholder="Semua"
+                    />
 
-                    <div>
-                        <label class="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Gaji</label>
-                        <select name="pay_freq" onchange="this.form.submit()" class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
-                            <option value="">Semua</option>
-                            @foreach (($payFrequencies ?? collect()) as $payFrequency)
-                                <option value="{{ $payFrequency }}" @selected(($selectedPayFrequency ?? '') === $payFrequency)>{{ $payFrequency }}</option>
-                            @endforeach
-                        </select>
-                    </div>
+                    <x-dashboard.filter-select
+                        label="Gaji"
+                        name="pay_freq"
+                        :options="$payFrequencies ?? collect()"
+                        :selected="$selectedPayFrequency ?? ''"
+                        placeholder="Semua"
+                    />
                 </div>
             </div>
         </form>

@@ -9,6 +9,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\WorkdayTargetController;
 use App\Http\Controllers\AttendanceTargetController;
 use App\Http\Middleware\EnsureAdministrator;
+use App\Http\Middleware\EnsureTargetAccess;
 
 /*
 |--------------------------------------------------------------------------
@@ -73,6 +74,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/settings/positions', [SettingPositionController::class, 'store'])->name('settings.positions.store');
         Route::put('/settings/positions/{id}', [SettingPositionController::class, 'update'])->name('settings.positions.update');
         Route::delete('/settings/positions/{id}', [SettingPositionController::class, 'destroy'])->name('settings.positions.destroy');
+    });
+
+    Route::middleware(EnsureTargetAccess::class)->group(function () {
         Route::get('/settings/workday-targets', [WorkdayTargetController::class, 'index'])->name('settings.workday-targets.index');
         Route::post('/settings/workday-targets', [WorkdayTargetController::class, 'store'])->name('settings.workday-targets.store');
         Route::get('/settings/attendance-targets', [AttendanceTargetController::class, 'index'])->name('settings.attendance-targets.index');

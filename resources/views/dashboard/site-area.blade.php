@@ -7,17 +7,19 @@
 @section('content')
     @php
         $companyOptions = collect($companyOptions ?? [])->mapWithKeys(fn ($config, $key) => [$key => $config['label']])->all();
-        $divisionOptions = ['Security', 'Cleaning'];
+        $divisionOptions = collect($divisionOptions ?? [])->values();
         $forcedDivision = auth()->user()?->forcedDivision();
-        $statusOptions = ['Aktif', 'Tidak Aktif'];
-        $branchOptions = ['Metro', 'Balikpapan'];
+        $statusOptions = collect($statusOptions ?? ['Aktif', 'Tidak Aktif'])->values();
+        $branchOptions = collect($branchOptions ?? [])->values();
         $siteAreaRows = collect($siteAreas?->items() ?? [])->values();
         $selectedPerPage = $selectedPerPage ?? 10;
         $areaManagerOptions = collect($areaManagerOptions ?? [])->values();
         $operationManagerOptions = collect($operationManagerOptions ?? [])->values();
         $selectedAreaManager = $selectedAreaManager ?? '';
         $selectedOperationManager = $selectedOperationManager ?? '';
-        $selectedStatus = $selectedStatus ?? '';
+        $selectedStatus = $selectedStatus ?? 'Aktif';
+        $forcedAreaManager = $forcedAreaManager ?? null;
+        $forcedOperationManager = $forcedOperationManager ?? null;
     @endphp
 
     <section
@@ -76,63 +78,55 @@
                 <div class="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-blue-50/60 p-5 shadow-sm">
                     <div class="site-area-filter-grid">
                         @if ($selectedCompany === 'servanda')
-                            <div>
-                                <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Divisi</label>
-                                @if (filled($forcedDivision))
-                                    <input type="hidden" name="division" value="{{ $forcedDivision }}">
-                                    <div class="flex h-[50px] items-center rounded-2xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-800">
-                                        {{ $forcedDivision }}
-                                    </div>
-                                @else
-                                    <select name="division" onchange="this.form.submit()" class="site-area-filter-field">
-                                        <option value="">Semua</option>
-                                        @foreach ($divisionOptions as $division)
-                                            <option value="{{ $division }}" @selected(($selectedDivision ?? null) === $division)>{{ $division }}</option>
-                                        @endforeach
-                                    </select>
-                                @endif
-                            </div>
+                            <x-dashboard.filter-select
+                                label="Divisi"
+                                name="division"
+                                :options="$divisionOptions"
+                                :selected="$selectedDivision"
+                                placeholder="Semua"
+                                :locked="filled($forcedDivision)"
+                                :locked-value="$forcedDivision"
+                                :locked-label="$forcedDivision"
+                            />
                         @endif
 
-                        <div>
-                            <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Cabang</label>
-                            <select name="branch" onchange="this.form.submit()" class="site-area-filter-field">
-                                <option value="">Semua</option>
-                                @foreach (collect($branchOptions ?? [])->values() as $branch)
-                                    <option value="{{ $branch }}" @selected(($selectedBranch ?? '') === $branch)>{{ $branch }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Cabang"
+                            name="branch"
+                            :options="$branchOptions"
+                            :selected="$selectedBranch"
+                            placeholder="Semua"
+                        />
 
-                        <div>
-                            <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Area Manager</label>
-                            <select name="area_manager" onchange="this.form.submit()" class="site-area-filter-field">
-                                <option value="">Semua</option>
-                                @foreach ($areaManagerOptions as $areaManagerOption)
-                                    <option value="{{ $areaManagerOption }}" @selected($selectedAreaManager === $areaManagerOption)>{{ $areaManagerOption }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Area Manager"
+                            name="area_manager"
+                            :options="$areaManagerOptions"
+                            :selected="$selectedAreaManager"
+                            placeholder="Semua"
+                            :locked="filled($forcedAreaManager)"
+                            :locked-value="$forcedAreaManager"
+                            :locked-label="$forcedAreaManager"
+                        />
 
-                        <div>
-                            <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Operation Manager</label>
-                            <select name="operation_manager" onchange="this.form.submit()" class="site-area-filter-field">
-                                <option value="">Semua</option>
-                                @foreach ($operationManagerOptions as $operationManagerOption)
-                                    <option value="{{ $operationManagerOption }}" @selected($selectedOperationManager === $operationManagerOption)>{{ $operationManagerOption }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Operation Manager"
+                            name="operation_manager"
+                            :options="$operationManagerOptions"
+                            :selected="$selectedOperationManager"
+                            placeholder="Semua"
+                            :locked="filled($forcedOperationManager)"
+                            :locked-value="$forcedOperationManager"
+                            :locked-label="$forcedOperationManager"
+                        />
 
-                        <div>
-                            <label class="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Status</label>
-                            <select name="status" onchange="this.form.submit()" class="site-area-filter-field">
-                                <option value="">Semua</option>
-                                @foreach ($statusOptions as $statusOption)
-                                    <option value="{{ $statusOption }}" @selected($selectedStatus === $statusOption)>{{ $statusOption }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Status"
+                            name="status"
+                            :options="$statusOptions"
+                            :selected="$selectedStatus"
+                            placeholder="Semua"
+                        />
                     </div>
                 </div>
             </form>

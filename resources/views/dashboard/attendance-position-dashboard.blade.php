@@ -11,7 +11,7 @@
             'gabe' => 'Gabe',
             'salus' => 'Salus',
         ];
-        $divisionOptions = ['Security', 'Cleaning'];
+        $divisionOptions = collect($divisionOptions ?? [])->values();
         $forcedDivision = auth()->user()?->forcedDivision();
         $areaManagers = $areaManagers ?? collect();
         $operationManagers = $operationManagers ?? collect();
@@ -38,62 +38,60 @@
                             '2xl:grid-cols-5' => $selectedCompany === 'servanda',
                         ])
                     >
-                        <div>
-                            <label class="{{ $dashboardFilterLabelClass }}">Nama PT</label>
-                            <select name="company" onchange="this.form.submit()" class="{{ $dashboardFilterFieldClass }}">
-                                @foreach ($companyOptions as $companyKey => $companyLabel)
-                                    <option value="{{ $companyKey }}" @selected($selectedCompany === $companyKey)>{{ $companyLabel }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Nama PT"
+                            name="company"
+                            :options="$companyOptions"
+                            :selected="$selectedCompany"
+                            placeholder="Semua"
+                            :field-class="$dashboardFilterFieldClass"
+                            :label-class="$dashboardFilterLabelClass"
+                        />
 
                         @if ($selectedCompany === 'servanda')
-                            <div>
-                                <label class="{{ $dashboardFilterLabelClass }}">Divisi</label>
-                                @if (filled($forcedDivision))
-                                    <input type="hidden" name="division" value="{{ $forcedDivision }}">
-                                    <div class="flex min-h-[52px] items-center rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 text-sm font-semibold text-slate-700 shadow-sm">
-                                        {{ $forcedDivision }}
-                                    </div>
-                                @else
-                                    <select name="division" onchange="this.form.submit()" class="{{ $dashboardFilterFieldClass }}">
-                                        <option value="">Semua</option>
-                                        @foreach ($divisionOptions as $division)
-                                            <option value="{{ $division }}" @selected(($selectedDivision ?? null) === $division)>{{ $division }}</option>
-                                        @endforeach
-                                    </select>
-                                @endif
-                            </div>
+                            <x-dashboard.filter-select
+                                label="Divisi"
+                                name="division"
+                                :options="$divisionOptions"
+                                :selected="$selectedDivision"
+                                placeholder="Semua"
+                                :locked="filled($forcedDivision)"
+                                :locked-value="$forcedDivision"
+                                :locked-label="$forcedDivision"
+                                :field-class="$dashboardFilterFieldClass"
+                                :label-class="$dashboardFilterLabelClass"
+                            />
                         @endif
 
-                        <div>
-                            <label class="{{ $dashboardFilterLabelClass }}">Tahun</label>
-                            <select name="year" onchange="this.form.submit()" class="{{ $dashboardFilterFieldClass }}">
-                                @foreach ($yearOptions as $year)
-                                    <option value="{{ $year }}" @selected($selectedYear === $year)>{{ $year }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Tahun"
+                            name="year"
+                            :options="$yearOptions"
+                            :selected="$selectedYear"
+                            placeholder="Semua"
+                            :field-class="$dashboardFilterFieldClass"
+                            :label-class="$dashboardFilterLabelClass"
+                        />
 
-                        <div>
-                            <label class="{{ $dashboardFilterLabelClass }}">Area Manager</label>
-                            <select name="area_manager" onchange="this.form.submit()" class="{{ $dashboardFilterFieldClass }}">
-                                <option value="">Semua</option>
-                                @foreach ($areaManagers as $areaManager)
-                                    <option value="{{ $areaManager }}" @selected(($selectedAreaManager ?? '') === $areaManager)>{{ $areaManager }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Area Manager"
+                            name="area_manager"
+                            :options="$areaManagers"
+                            :selected="$selectedAreaManager"
+                            placeholder="Semua"
+                            :field-class="$dashboardFilterFieldClass"
+                            :label-class="$dashboardFilterLabelClass"
+                        />
 
-                        <div>
-                            <label class="{{ $dashboardFilterLabelClass }}">Operation Manager</label>
-                            <select name="operation_manager" onchange="this.form.submit()" class="{{ $dashboardFilterFieldClass }}">
-                                <option value="">Semua</option>
-                                @foreach ($operationManagers as $operationManager)
-                                    <option value="{{ $operationManager }}" @selected(($selectedOperationManager ?? '') === $operationManager)>{{ $operationManager }}</option>
-                                @endforeach
-                            </select>
-                        </div>
+                        <x-dashboard.filter-select
+                            label="Operation Manager"
+                            name="operation_manager"
+                            :options="$operationManagers"
+                            :selected="$selectedOperationManager"
+                            placeholder="Semua"
+                            :field-class="$dashboardFilterFieldClass"
+                            :label-class="$dashboardFilterLabelClass"
+                        />
                     </div>
                 </div>
             </form>

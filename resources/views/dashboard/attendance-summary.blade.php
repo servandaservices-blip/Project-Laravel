@@ -7,46 +7,19 @@
 @section('content')
     @php
         $emptyFilterValue = '__EMPTY__';
-        $selectedPositionFilters = collect($selectedPositionFilters ?? [])->filter()->values()->all();
-        $selectedAreaFilters = collect($selectedAreaFilters ?? [])->filter()->values()->all();
-        $selectedPositionCollection = collect($selectedPositionFilters);
-        $selectedAreaCollection = collect($selectedAreaFilters);
+        $selectedPositionFilter = trim((string) ($selectedPositionFilter ?? ''));
+        $selectedAreaFilter = trim((string) ($selectedAreaFilter ?? ''));
         $selectedAreaManager = $selectedAreaManager ?? '';
         $selectedOperationManager = $selectedOperationManager ?? '';
-        $divisionOptions = [$emptyFilterValue, 'Security', 'Cleaning'];
+        $forcedAreaManager = $forcedAreaManager ?? null;
+        $forcedOperationManager = $forcedOperationManager ?? null;
+        $divisionOptions = collect($divisionOptions ?? [$emptyFilterValue])->values();
         $forcedDivision = auth()->user()?->forcedDivision();
-        $multiSelectSummary = function (array $selected, string $defaultLabel) use ($emptyFilterValue): string {
-            if (count($selected) === 0) {
-                return $defaultLabel;
-            }
-
-            $displayValue = fn ($value) => $value === $emptyFilterValue ? 'Tanpa Data' : $value;
-
-            if (count($selected) === 1) {
-                return $displayValue($selected[0]);
-            }
-
-            return $displayValue($selected[0]) . ' +' . (count($selected) - 1);
-        };
-        $buildFilterActionUrl = function (string $key, array $values = []) {
-            $query = request()->query();
-            unset($query[$key]);
-
-            if ($values !== []) {
-                $query[$key] = $values;
-            }
-
-            return route('attendance.summary', $query);
-        };
         $attendanceFilterLabelClass = 'mb-2 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500';
         $attendanceFilterFieldClass = 'w-full rounded-2xl border border-sky-200 bg-sky-50/40 px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-4 focus:ring-sky-100';
-        $attendanceResetUrl = route('attendance.summary', array_filter([
-            'company' => $selectedCompany ?? 'servanda',
-            'month' => $selectedMonth,
-            'year' => $selectedYear,
-            'per_page' => $selectedPerPage ?? 10,
-            'division' => (($selectedCompany ?? 'servanda') === 'servanda' && filled($forcedDivision)) ? $forcedDivision : null,
-        ], fn ($value) => $value !== null && $value !== ''));
+        $monthOptions = collect(range(1, 12))->mapWithKeys(
+            fn ($monthNumber) => [$monthNumber => \Carbon\Carbon::create()->month($monthNumber)->translatedFormat('F')]
+        )->all();
     @endphp
     <section class="dashboard-card overflow-visible">
         @if (session('success'))
@@ -86,13 +59,9 @@
                     <input type="hidden" name="per_page" value="{{ $selectedPerPage ?? 10 }}">
                     <input type="hidden" name="search" value="{{ $selectedSearch ?? '' }}">
                     <input type="hidden" name="attendance_rate_filter" value="{{ $selectedAttendanceRateFilter ?? '' }}">
-                    @foreach ($selectedPositionCollection as $position)
-                        <input type="hidden" name="position[]" value="{{ $position }}">
-                    @endforeach
+                    <input type="hidden" name="position" value="{{ $selectedPositionFilter }}">
                     <input type="hidden" name="pay_freq" value="{{ $selectedPayFrequencyFilter ?? '' }}">
-                    @foreach ($selectedAreaCollection as $area)
-                        <input type="hidden" name="area[]" value="{{ $area }}">
-                    @endforeach
+                    <input type="hidden" name="area" value="{{ $selectedAreaFilter }}">
                     <input type="hidden" name="area_manager" value="{{ $selectedAreaManager }}">
                     <input type="hidden" name="operation_manager" value="{{ $selectedOperationManager }}">
 
@@ -145,20 +114,20 @@
             class="mt-5 space-y-5"
         >
             <input type="hidden" name="company" value="{{ $selectedCompany ?? 'servanda' }}">
-            <input type="hidden" name="month" value="{{ $selectedMonth }}">
             <input type="hidden" name="year" value="{{ $selectedYear }}">
 
             <div class="attendance-summary-toolbar">
-                <div>
-                    <label class="{{ $attendanceFilterLabelClass }}">Search Employee / Employee No / Area</label>
-                    <input
-                        type="text"
-                        name="search"
-                        value="{{ $selectedSearch ?? '' }}"
-                        placeholder="Cari nama karyawan, employee no, atau area"
-                        class="{{ $attendanceFilterFieldClass }}"
-                    >
-                </div>
+                    <div>
+                        <label class="{{ $attendanceFilterLabelClass }}">Search Employee / Employee No / Area</label>
+                        <input
+                            type="text"
+                            name="search"
+                            value="{{ $selectedSearch ?? '' }}"
+                            placeholder="Cari nama karyawan, employee no, atau area"
+                            data-attendance-summary-search
+                            class="{{ $attendanceFilterFieldClass }}"
+                        >
+                    </div>
 
                 <div class="attendance-summary-toolbar-side">
                     <div class="attendance-summary-show-field">
@@ -176,178 +145,122 @@
                 <div class="attendance-summary-filter-grid">
                     @if (($selectedCompany ?? 'servanda') === 'servanda')
                         <div class="attendance-summary-filter-panel">
-                            <label class="{{ $attendanceFilterLabelClass }}">Divisi</label>
-                            @if (filled($forcedDivision))
-                                <input type="hidden" name="division" value="{{ $forcedDivision }}">
-                                <div class="flex min-h-[52px] items-center rounded-2xl border border-sky-200 bg-sky-50/60 px-4 text-sm font-semibold text-sky-800">
-                                    {{ $forcedDivision }}
-                                </div>
-                            @else
-                                <select name="division" class="{{ $attendanceFilterFieldClass }}">
-                                    <option value="">Semua</option>
-                                    @foreach ($divisionOptions as $division)
-                                        <option value="{{ $division }}" @selected(($selectedDivision ?? null) === $division)>{{ $division === $emptyFilterValue ? 'Tanpa Data' : $division }}</option>
-                                    @endforeach
-                                </select>
-                            @endif
+                            <x-dashboard.filter-select
+                                label="Divisi"
+                                name="division"
+                                :options="$divisionOptions"
+                                :selected="$selectedDivision"
+                                placeholder="Semua"
+                                :locked="filled($forcedDivision)"
+                                :locked-value="$forcedDivision"
+                                :locked-label="$forcedDivision"
+                                :field-class="$attendanceFilterFieldClass"
+                                :label-class="$attendanceFilterLabelClass"
+                            />
+
+                            <div class="mt-4">
+                                <x-dashboard.filter-select
+                                    label="Bulan"
+                                    name="month"
+                                    :options="$monthOptions"
+                                    :selected="$selectedMonth"
+                                    placeholder="Pilih Bulan"
+                                    :field-class="$attendanceFilterFieldClass"
+                                    :label-class="$attendanceFilterLabelClass"
+                                />
+                            </div>
+                        </div>
+                    @else
+                        <div class="attendance-summary-filter-panel">
+                            <x-dashboard.filter-select
+                                label="Bulan"
+                                name="month"
+                                :options="$monthOptions"
+                                :selected="$selectedMonth"
+                                placeholder="Pilih Bulan"
+                                :field-class="$attendanceFilterFieldClass"
+                                :label-class="$attendanceFilterLabelClass"
+                            />
                         </div>
                     @endif
 
                     <div class="attendance-summary-filter-panel">
-                        <label class="{{ $attendanceFilterLabelClass }}">Filter Attendance %</label>
-                        <select name="attendance_rate_filter" class="{{ $attendanceFilterFieldClass }}">
-                            <option value="" @selected(($selectedAttendanceRateFilter ?? '') === '')>Semua</option>
-                            <option value="gte_90" @selected(($selectedAttendanceRateFilter ?? '') === 'gte_90')>Baik</option>
-                            <option value="lt_90" @selected(($selectedAttendanceRateFilter ?? '') === 'lt_90')>Perlu Perhatian</option>
-                        </select>
+                        <x-dashboard.filter-select
+                            label="Filter Attendance %"
+                            name="attendance_rate_filter"
+                            :options="[
+                                'gte_90' => 'Baik',
+                                'lt_90' => 'Perlu Perhatian',
+                            ]"
+                            :selected="$selectedAttendanceRateFilter ?? ''"
+                            placeholder="Semua"
+                            :field-class="$attendanceFilterFieldClass"
+                            :label-class="$attendanceFilterLabelClass"
+                        />
 
                         <div class="mt-4">
-                            <label class="{{ $attendanceFilterLabelClass }}">Gaji</label>
-                            <select name="pay_freq" class="{{ $attendanceFilterFieldClass }}">
-                                <option value="">Semua</option>
-                                @foreach ($payFrequencies as $payFrequency)
-                                    <option value="{{ $payFrequency }}" @selected(($selectedPayFrequencyFilter ?? '') === $payFrequency)>
-                                        {{ $payFrequency }}
-                                    </option>
-                                @endforeach
-                            </select>
+                            <x-dashboard.filter-select
+                                label="Gaji"
+                                name="pay_freq"
+                                :options="$payFrequencies"
+                                :selected="$selectedPayFrequencyFilter ?? ''"
+                                placeholder="Semua"
+                                :field-class="$attendanceFilterFieldClass"
+                                :label-class="$attendanceFilterLabelClass"
+                            />
                         </div>
                     </div>
 
                     <div class="attendance-summary-filter-panel">
-                        <label class="{{ $attendanceFilterLabelClass }}">Position</label>
-                        <details class="group relative z-30" x-data="{ search: '' }">
-                            <summary class="attendance-summary-select-trigger">
-                                <span class="truncate">{{ $multiSelectSummary($selectedPositionFilters, 'Semua') }}</span>
-                                <span class="ml-3 text-sky-500 transition group-open:rotate-180">v</span>
-                            </summary>
-
-                            <div class="attendance-summary-dropdown">
-                                <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                                    <span class="text-xs text-slate-500">Pilih satu atau beberapa position.</span>
-                                    <div class="flex shrink-0 items-center gap-3 text-xs font-semibold">
-                                        <a href="{{ $buildFilterActionUrl('position') }}" class="text-slate-500 hover:text-slate-800">
-                                            Reset
-                                        </a>
-                                        <a href="{{ $buildFilterActionUrl('position', $positions->values()->all()) }}" class="text-blue-600 hover:text-blue-800">
-                                            Pilih Semua
-                                        </a>
-                                    </div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <input
-                                        x-model="search"
-                                        type="text"
-                                        placeholder="Search position"
-                                        class="attendance-summary-search-input"
-                                    >
-                                </div>
-
-                                <div class="max-h-56 space-y-2 overflow-y-auto pr-1">
-                                    @foreach ($positions as $position)
-                                        <label x-show="'{{ str($position)->lower()->replace("'", "\\'") }}'.includes(search.toLowerCase())" class="attendance-summary-option">
-                                            <input
-                                                type="checkbox"
-                                                name="position[]"
-                                                value="{{ $position }}"
-                                                @checked(in_array($position, $selectedPositionFilters, true))
-                                                class="attendance-summary-checkbox"
-                                            >
-                                            <span>{{ $position === $emptyFilterValue ? 'Tanpa Data' : $position }}</span>
-                                        </label>
-                                    @endforeach
-                                </div>
-                            </div>
-                        </details>
+                        <x-dashboard.filter-select
+                            label="Position"
+                            name="position"
+                            :options="$positions"
+                            :selected="$selectedPositionFilter"
+                            placeholder="Semua"
+                            :field-class="$attendanceFilterFieldClass"
+                            :label-class="$attendanceFilterLabelClass"
+                        />
 
                         <div class="mt-4">
-                            <label class="{{ $attendanceFilterLabelClass }}">Area Penempatan</label>
-                            <details class="group relative z-30" x-data="{ search: '' }">
-                                <summary class="attendance-summary-select-trigger">
-                                    <span class="truncate">{{ $multiSelectSummary($selectedAreaFilters, 'Semua') }}</span>
-                                    <span class="ml-3 text-sky-500 transition group-open:rotate-180">v</span>
-                                </summary>
-
-                                <div class="attendance-summary-dropdown">
-                                    <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                                        <span class="text-xs text-slate-500">Pilih satu atau beberapa area penempatan.</span>
-                                        <div class="flex shrink-0 items-center gap-3 text-xs font-semibold">
-                                            <a href="{{ $buildFilterActionUrl('area') }}" class="text-slate-500 hover:text-slate-800">
-                                                Reset
-                                            </a>
-                                            <a href="{{ $buildFilterActionUrl('area', $areas->values()->all()) }}" class="text-emerald-600 hover:text-emerald-800">
-                                                Pilih Semua
-                                            </a>
-                                        </div>
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <input
-                                            x-model="search"
-                                            type="text"
-                                            placeholder="Search area penempatan"
-                                            class="attendance-summary-search-input"
-                                        >
-                                    </div>
-
-                                    <div class="max-h-56 space-y-2 overflow-y-auto pr-1">
-                                        @foreach ($areas as $area)
-                                            <label x-show="'{{ str($area)->lower()->replace("'", "\\'") }}'.includes(search.toLowerCase())" class="attendance-summary-option">
-                                                <input
-                                                    type="checkbox"
-                                                    name="area[]"
-                                                    value="{{ $area }}"
-                                                    @checked(in_array($area, $selectedAreaFilters, true))
-                                                    class="attendance-summary-checkbox"
-                                                >
-                                                <span>{{ $area === $emptyFilterValue ? 'Tanpa Data' : $area }}</span>
-                                            </label>
-                                        @endforeach
-                                    </div>
-                                </div>
-                            </details>
+                            <x-dashboard.filter-select
+                                label="Area Penempatan"
+                                name="area"
+                                :options="$areas"
+                                :selected="$selectedAreaFilter"
+                                placeholder="Semua"
+                                :field-class="$attendanceFilterFieldClass"
+                                :label-class="$attendanceFilterLabelClass"
+                            />
                         </div>
                     </div>
 
                     <div class="attendance-summary-filter-panel">
-                        <label class="{{ $attendanceFilterLabelClass }}">Area Manager</label>
-                        <select name="area_manager" class="{{ $attendanceFilterFieldClass }}">
-                            <option value="">Semua</option>
-                            @foreach ($areaManagers as $areaManager)
-                                <option value="{{ $areaManager }}" @selected($selectedAreaManager === $areaManager)>
-                                    {{ $areaManager === $emptyFilterValue ? 'Tanpa Data' : $areaManager }}
-                                </option>
-                            @endforeach
-                        </select>
+                        <x-dashboard.filter-select
+                            label="Area Manager"
+                            name="area_manager"
+                            :options="$areaManagers"
+                            :selected="$selectedAreaManager"
+                            placeholder="Semua"
+                            :field-class="$attendanceFilterFieldClass"
+                            :label-class="$attendanceFilterLabelClass"
+                        />
 
                         <div class="mt-4">
-                            <label class="{{ $attendanceFilterLabelClass }}">Operation Manager</label>
-                            <select name="operation_manager" class="{{ $attendanceFilterFieldClass }}">
-                                <option value="">Semua</option>
-                                @foreach ($operationManagers as $operationManager)
-                                    <option value="{{ $operationManager }}" @selected($selectedOperationManager === $operationManager)>
-                                        {{ $operationManager === $emptyFilterValue ? 'Tanpa Data' : $operationManager }}
-                                    </option>
-                                @endforeach
-                            </select>
+                            <x-dashboard.filter-select
+                                label="Operation Manager"
+                                name="operation_manager"
+                                :options="$operationManagers"
+                                :selected="$selectedOperationManager"
+                                placeholder="Semua"
+                                :locked="filled($forcedOperationManager)"
+                                :locked-value="$forcedOperationManager"
+                                :locked-label="$forcedOperationManager"
+                                :field-class="$attendanceFilterFieldClass"
+                                :label-class="$attendanceFilterLabelClass"
+                            />
                         </div>
                     </div>
-                </div>
-
-                <div class="attendance-summary-filter-actions">
-                    <a
-                        href="{{ $attendanceResetUrl }}"
-                        class="inline-flex h-[48px] items-center justify-center rounded-2xl border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50"
-                    >
-                        Reset Filter
-                    </a>
-                    <button
-                        type="submit"
-                        class="inline-flex h-[48px] items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-                    >
-                        Terapkan Filter
-                    </button>
                 </div>
             </div>
         </form>
@@ -491,4 +404,24 @@
             </div>
         </div>
     </section>
+
+    <script>
+        (() => {
+            const form = document.getElementById('attendance-filter-form');
+            const searchInput = form ? form.querySelector('[data-attendance-summary-search]') : null;
+
+            if (!form || !searchInput) {
+                return;
+            }
+
+            let timer = null;
+
+            searchInput.addEventListener('input', () => {
+                window.clearTimeout(timer);
+                timer = window.setTimeout(() => {
+                    form.requestSubmit();
+                }, 400);
+            });
+        })();
+    </script>
 @endsection

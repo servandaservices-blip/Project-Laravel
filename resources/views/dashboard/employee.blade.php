@@ -17,15 +17,19 @@
         $payFrequencies = $payFrequencies ?? $employeeCollection->pluck('pay_freq')->filter()->unique()->sort()->values();
         $statuses = $statuses ?? $employeeCollection->pluck('status')->filter()->unique()->sort()->values();
         $contractStatuses = $contractStatuses ?? collect(['Aman', 'Perhatian', 'Menjelang Berakhir', 'Expired']);
-        $divisionOptions = ['Security', 'Cleaning'];
-        $forcedDivision = auth()->user()?->forcedDivision();
+        $divisionOptions = collect($divisionOptions ?? [])->values();
+        $forcedDivision = $forcedDivision ?? auth()->user()?->forcedDivision();
+        $forcedAreaManager = $forcedAreaManager ?? auth()->user()?->areaManagerScopeName();
+        $forcedOperationManager = $forcedOperationManager ?? auth()->user()?->operationManagerScopeName();
+        $isAreaManagerScoped = $isAreaManagerScoped ?? filled($forcedAreaManager);
+        $isOperationManagerScoped = $isOperationManagerScoped ?? filled($forcedOperationManager);
         $canEditEmployees = auth()->user()?->isAdministrator() ?? false;
         $selectedBranches = collect(request('branch', []))->filter()->values()->all();
         $selectedPositions = collect(request('position', []))->filter()->values()->all();
-        $selectedPayFrequencies = collect(request('pay_freq', []))->filter()->values()->all();
+        $selectedPayFrequency = $selectedPayFrequency ?? trim((string) request('pay_freq', ''));
         $selectedContractStatuses = collect(request('contract_status', []))->filter()->values()->all();
-        $selectedAreaManager = trim((string) request('area_manager', ''));
-        $selectedOperationManager = trim((string) request('operation_manager', ''));
+        $selectedAreaManager = $selectedAreaManager ?? trim((string) request('area_manager', ''));
+        $selectedOperationManager = $selectedOperationManager ?? trim((string) request('operation_manager', ''));
         $selectedToolbarArea = trim((string) request('toolbar_area', ''));
         $selectedPerPage = $selectedPerPage ?? (int) request('per_page', 10);
         $emptyFilterValue = '__EMPTY__';
@@ -173,7 +177,7 @@
                 </div>
 
                 <div class="employee-total-card rounded-3xl border px-5 py-4 text-right shadow-sm">
-                    <p class="employee-total-label text-xs font-semibold uppercase tracking-[0.18em]">Total Data</p>
+                    <p class="employee-total-label text-xs font-semibold uppercase tracking-[0.18em]">Total Pegawai</p>
                     <p class="employee-total-value mt-1 text-3xl font-bold tracking-tight">
                         {{ method_exists($employees, 'total') ? $employees->total() : $employees->count() }}
                     </p>
@@ -192,50 +196,18 @@
                     <div class="employee-filter-grid">
                         <div>
                             <label class="mb-2 block text-sm font-medium text-slate-700">Cabang</label>
-                            <details class="group relative z-30" x-data="{ search: '' }">
-                                <summary class="flex cursor-pointer list-none items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm transition hover:border-sky-300 group-open:border-sky-400 group-open:ring-4 group-open:ring-sky-100">
-                                    <span class="truncate">{{ $multiSelectSummary($selectedBranches, 'Semua') }}</span>
-                                    <span class="ml-3 text-sky-600 transition group-open:rotate-180">v</span>
-                                </summary>
-
-                                <div class="mt-2 rounded-2xl border border-rose-100 bg-white p-3 shadow-xl shadow-rose-100/70">
-                                    <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                                        <span class="text-xs text-slate-500">Pilih satu atau beberapa cabang.</span>
-                                        <div class="flex shrink-0 items-center gap-3 text-xs font-semibold">
-                                            <a href="{{ $buildFilterActionUrl('branch') }}" class="text-slate-500 hover:text-slate-800">
-                                                Reset
-                                            </a>
-                                            <a href="{{ $buildFilterActionUrl('branch', $branches->values()->all()) }}" class="text-rose-600 hover:text-rose-800">
-                                                Pilih Semua
-                                            </a>
-                                        </div>
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <input
-                                            x-model="search"
-                                            type="text"
-                                            placeholder="Search cabang"
-                                            class="w-full rounded-xl border border-rose-100 bg-rose-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-100"
-                                        >
-                                    </div>
-
-                                    <div class="max-h-56 space-y-2 overflow-y-auto pr-1">
-                                        @foreach ($branches as $branch)
-                                            <label x-show="'{{ $branch === $emptyFilterValue ? 'tanpa data' : str($branch)->lower()->replace("'", "\\'") }}'.includes(search.toLowerCase())" class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 transition hover:bg-rose-50/70">
-                                                <input
-                                                    type="checkbox"
-                                                    name="branch[]"
-                                                    value="{{ $branch }}"
-                                                    @checked(in_array($branch, $selectedBranches, true))
-                                                    class="h-4 w-4 rounded border-rose-200 text-rose-600 accent-rose-600 focus:ring-rose-400"
-                                                >
-                                                <span>{{ $displayFilterValue($branch) }}</span>
-                                            </label>
-                                        @endforeach
-                                    </div>
-                                </div>
-                            </details>
+                            <select
+                                name="branch"
+                                onchange="this.form.submit()"
+                                class="w-full rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                            >
+                                <option value="">Semua</option>
+                                @foreach ($branches as $branch)
+                                    <option value="{{ $branch }}" @selected(in_array($branch, $selectedBranches, true))>
+                                        {{ $displayFilterValue($branch) }}
+                                    </option>
+                                @endforeach
+                            </select>
                         </div>
 
                         @if ($isServanda)
@@ -262,130 +234,93 @@
 
                         <div>
                             <label class="mb-2 block text-sm font-medium text-slate-700">Position</label>
-                            <details class="group relative z-30" x-data="{ search: '' }">
-                                <summary class="flex cursor-pointer list-none items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm transition hover:border-sky-300 group-open:border-sky-400 group-open:ring-4 group-open:ring-sky-100">
-                                    <span class="truncate">{{ $multiSelectSummary($selectedPositions, 'Semua') }}</span>
-                                    <span class="ml-3 text-sky-600 transition group-open:rotate-180">v</span>
-                                </summary>
-
-                                <div class="mt-2 rounded-2xl border border-blue-100 bg-white p-3 shadow-xl shadow-blue-100/70">
-                                    <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                                        <span class="text-xs text-slate-500">Pilih satu atau beberapa position.</span>
-                                        <div class="flex shrink-0 items-center gap-3 text-xs font-semibold">
-                                            <a href="{{ $buildFilterActionUrl('position') }}" class="text-slate-500 hover:text-slate-800">
-                                                Reset
-                                            </a>
-                                            <a href="{{ $buildFilterActionUrl('position', $positions->values()->all()) }}" class="text-blue-600 hover:text-blue-800">
-                                                Pilih Semua
-                                            </a>
-                                        </div>
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <input
-                                            x-model="search"
-                                            type="text"
-                                            placeholder="Search position"
-                                            class="w-full rounded-xl border border-blue-100 bg-blue-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
-                                        >
-                                    </div>
-
-                                    <div class="max-h-56 space-y-2 overflow-y-auto pr-1">
-                                        @foreach ($positions as $position)
-                                            <label x-show="'{{ $position === $emptyFilterValue ? 'tanpa data' : str($position)->lower()->replace("'", "\\'") }}'.includes(search.toLowerCase())" class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 transition hover:bg-blue-50/70">
-                                                <input
-                                                    type="checkbox"
-                                                    name="position[]"
-                                                    value="{{ $position }}"
-                                                    @checked(in_array($position, $selectedPositions, true))
-                                                    class="h-4 w-4 rounded border-blue-200 text-blue-600 accent-blue-600 focus:ring-blue-400"
-                                                >
-                                                <span>{{ $displayFilterValue($position) }}</span>
-                                            </label>
-                                        @endforeach
-                                    </div>
-                                </div>
-                            </details>
+                            <select
+                                name="position"
+                                onchange="this.form.submit()"
+                                class="w-full rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                            >
+                                <option value="">Semua</option>
+                                @foreach ($positions as $position)
+                                    <option value="{{ $position }}" @selected(in_array($position, $selectedPositions, true))>
+                                        {{ $displayFilterValue($position) }}
+                                    </option>
+                                @endforeach
+                            </select>
                         </div>
 
                         <div>
                             <label class="mb-2 block text-sm font-medium text-slate-700">Area Manager</label>
-                            <select
-                                name="area_manager"
-                                class="w-full rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                            >
-                                <option value="">Semua</option>
-                                @foreach ($areaManagers as $areaManager)
-                                    <option value="{{ $areaManager }}" @selected($selectedAreaManager === $areaManager)>{{ $displayFilterValue($areaManager) }}</option>
-                                @endforeach
-                            </select>
+                            @if ($isOperationManagerScoped)
+                                <input type="hidden" name="area_manager" value="">
+                                <div class="flex min-h-[50px] items-center rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 text-sm font-semibold text-slate-700 shadow-sm">
+                                    Semua
+                                </div>
+                            @elseif ($isAreaManagerScoped)
+                                <input type="hidden" name="area_manager" value="{{ $selectedAreaManager }}">
+                                <div class="flex min-h-[50px] items-center rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 text-sm font-semibold text-slate-700 shadow-sm">
+                                    {{ $displayFilterValue($selectedAreaManager) }}
+                                </div>
+                            @else
+                                <select
+                                    name="area_manager"
+                                    onchange="this.form.submit()"
+                                    class="w-full rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                                >
+                                    <option value="">Semua</option>
+                                    @foreach ($areaManagers as $areaManager)
+                                        <option value="{{ $areaManager }}" @selected($selectedAreaManager === $areaManager)>{{ $displayFilterValue($areaManager) }}</option>
+                                    @endforeach
+                                </select>
+                            @endif
                         </div>
 
                         <div>
                             <label class="mb-2 block text-sm font-medium text-slate-700">Operation Manager</label>
-                            <select
-                                name="operation_manager"
-                                class="w-full rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
-                            >
-                                <option value="">Semua</option>
-                                @foreach ($operationManagers as $operationManager)
-                                    <option value="{{ $operationManager }}" @selected($selectedOperationManager === $operationManager)>{{ $displayFilterValue($operationManager) }}</option>
-                                @endforeach
-                            </select>
+                            @if ($isAreaManagerScoped)
+                                <input type="hidden" name="operation_manager" value="">
+                                <div class="flex min-h-[50px] items-center rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 text-sm font-semibold text-slate-700 shadow-sm">
+                                    Semua
+                                </div>
+                            @elseif ($isOperationManagerScoped)
+                                <input type="hidden" name="operation_manager" value="{{ $selectedOperationManager }}">
+                                <div class="flex min-h-[50px] items-center rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 text-sm font-semibold text-slate-700 shadow-sm">
+                                    {{ $displayFilterValue($selectedOperationManager) }}
+                                </div>
+                            @else
+                                <select
+                                    name="operation_manager"
+                                    onchange="this.form.submit()"
+                                    class="w-full rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                                >
+                                    <option value="">Semua</option>
+                                    @foreach ($operationManagers as $operationManager)
+                                        <option value="{{ $operationManager }}" @selected($selectedOperationManager === $operationManager)>{{ $displayFilterValue($operationManager) }}</option>
+                                    @endforeach
+                                </select>
+                            @endif
                         </div>
 
                         <div>
                             <label class="mb-2 block text-sm font-medium text-slate-700">Gaji</label>
-                            <details class="group relative z-30" x-data="{ search: '' }">
-                                <summary class="flex cursor-pointer list-none items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm transition hover:border-sky-300 group-open:border-sky-400 group-open:ring-4 group-open:ring-sky-100">
-                                    <span class="truncate">{{ $multiSelectSummary($selectedPayFrequencies, 'Semua') }}</span>
-                                    <span class="ml-3 text-sky-600 transition group-open:rotate-180">v</span>
-                                </summary>
-
-                                <div class="mt-2 rounded-2xl border border-indigo-100 bg-white p-3 shadow-xl shadow-indigo-100/70">
-                                    <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                                        <span class="text-xs text-slate-500">Pilih jenis gaji berdasarkan Pay Freq.</span>
-                                        <div class="flex shrink-0 items-center gap-3 text-xs font-semibold">
-                                            <a href="{{ $buildFilterActionUrl('pay_freq') }}" class="text-slate-500 hover:text-slate-800">
-                                                Reset
-                                            </a>
-                                            <a href="{{ $buildFilterActionUrl('pay_freq', $payFrequencies->values()->all()) }}" class="text-indigo-600 hover:text-indigo-800">
-                                                Pilih Semua
-                                            </a>
-                                        </div>
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <input
-                                            x-model="search"
-                                            type="text"
-                                            placeholder="Search gaji"
-                                            class="w-full rounded-xl border border-indigo-100 bg-indigo-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-4 focus:ring-indigo-100"
-                                        >
-                                    </div>
-
-                                    <div class="max-h-56 space-y-2 overflow-y-auto pr-1">
-                                        @foreach ($payFrequencies as $payFrequency)
-                                            <label x-show="'{{ $payFrequency === $emptyFilterValue ? 'tanpa data' : str($payFrequency)->lower()->replace("'", "\\'") }}'.includes(search.toLowerCase())" class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 transition hover:bg-indigo-50/70">
-                                                <input
-                                                    type="checkbox"
-                                                    name="pay_freq[]"
-                                                    value="{{ $payFrequency }}"
-                                                    @checked(in_array($payFrequency, $selectedPayFrequencies, true))
-                                                    class="h-4 w-4 rounded border-indigo-200 text-indigo-600 accent-indigo-600 focus:ring-indigo-400"
-                                                >
-                                                <span>{{ $displayFilterValue($payFrequency) }}</span>
-                                            </label>
-                                        @endforeach
-                                    </div>
-                                </div>
-                            </details>
+                            <select
+                                name="pay_freq"
+                                onchange="this.form.submit()"
+                                class="w-full rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                            >
+                                <option value="">Semua</option>
+                                @foreach ($payFrequencies as $payFrequency)
+                                    <option value="{{ $payFrequency }}" @selected($selectedPayFrequency === $payFrequency)>
+                                        {{ $displayFilterValue($payFrequency) }}
+                                    </option>
+                                @endforeach
+                            </select>
                         </div>
 
                         <div>
                             <label class="mb-2 block text-sm font-medium text-slate-700">Status</label>
                             <select
                                 name="status"
+                                onchange="this.form.submit()"
                                 class="w-full rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
                             >
                                 <option value="">Semua</option>
@@ -397,59 +332,23 @@
 
                         <div>
                             <label class="mb-2 block text-sm font-medium text-slate-700">Status Kontrak</label>
-                            <details class="group relative z-30" x-data="{ search: '' }">
-                                <summary class="flex cursor-pointer list-none items-center justify-between rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm transition hover:border-sky-300 group-open:border-sky-400 group-open:ring-4 group-open:ring-sky-100">
-                                    <span class="truncate">{{ $multiSelectSummary($selectedContractStatuses, 'Semua') }}</span>
-                                    <span class="ml-3 text-sky-600 transition group-open:rotate-180">v</span>
-                                </summary>
-
-                                <div class="mt-2 rounded-2xl border border-cyan-100 bg-white p-3 shadow-xl shadow-cyan-100/70">
-                                    <div class="mb-3 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                                        <span class="text-xs text-slate-500">Pilih satu atau beberapa status kontrak.</span>
-                                        <div class="flex shrink-0 items-center gap-3 text-xs font-semibold">
-                                            <a href="{{ $buildFilterActionUrl('contract_status') }}" class="text-slate-500 hover:text-slate-800">
-                                                Reset
-                                            </a>
-                                            <a href="{{ $buildFilterActionUrl('contract_status', $contractStatuses->values()->all()) }}" class="text-cyan-600 hover:text-cyan-800">
-                                                Pilih Semua
-                                            </a>
-                                        </div>
-                                    </div>
-
-                                    <div class="mb-3">
-                                        <input
-                                            x-model="search"
-                                            type="text"
-                                            placeholder="Search status kontrak"
-                                            class="w-full rounded-xl border border-cyan-100 bg-cyan-50/40 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-cyan-300 focus:ring-4 focus:ring-cyan-100"
-                                        >
-                                    </div>
-
-                                    <div class="max-h-56 space-y-2 overflow-y-auto pr-1">
-                                        @foreach ($contractStatuses as $contractStatus)
-                                            <label x-show="'{{ $contractStatus === $emptyFilterValue ? 'tanpa data' : str($contractStatus)->lower()->replace("'", "\\'") }}'.includes(search.toLowerCase())" class="flex items-center gap-3 rounded-xl px-3 py-2 text-sm text-slate-700 transition hover:bg-cyan-50/70">
-                                                <input
-                                                    type="checkbox"
-                                                    name="contract_status[]"
-                                                    value="{{ $contractStatus }}"
-                                                    @checked(in_array($contractStatus, $selectedContractStatuses, true))
-                                                    class="h-4 w-4 rounded border-cyan-200 text-cyan-600 accent-cyan-600 focus:ring-cyan-400"
-                                                >
-                                                <span>{{ $displayFilterValue($contractStatus) }}</span>
-                                            </label>
-                                        @endforeach
-                                    </div>
-                                </div>
-                            </details>
+                            <select
+                                name="contract_status"
+                                onchange="this.form.submit()"
+                                class="w-full rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 py-3 text-sm text-slate-700 shadow-sm outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+                            >
+                                <option value="">Semua</option>
+                                @foreach ($contractStatuses as $contractStatus)
+                                    <option value="{{ $contractStatus }}" @selected(in_array($contractStatus, $selectedContractStatuses, true))>
+                                        {{ $displayFilterValue($contractStatus) }}
+                                    </option>
+                                @endforeach
+                            </select>
                         </div>
                     </div>
                 </div>
 
                 <div class="employee-action-group mt-5">
-                    <button type="submit" class="employee-action-button employee-action-primary">
-                        Search / Filter
-                    </button>
-
                     <a href="{{ route('employee.index', ['company' => $selectedCompany ?? 'servanda']) }}" class="employee-action-button employee-action-neutral">
                         Reset
                     </a>
@@ -496,9 +395,7 @@
                 @endforeach
                 <input type="hidden" name="area_manager" value="{{ $selectedAreaManager }}">
                 <input type="hidden" name="operation_manager" value="{{ $selectedOperationManager }}">
-                @foreach ($selectedPayFrequencies as $payFrequency)
-                    <input type="hidden" name="pay_freq[]" value="{{ $payFrequency }}">
-                @endforeach
+                <input type="hidden" name="pay_freq" value="{{ $selectedPayFrequency }}">
                 @foreach ($selectedContractStatuses as $contractStatus)
                     <input type="hidden" name="contract_status[]" value="{{ $contractStatus }}">
                 @endforeach

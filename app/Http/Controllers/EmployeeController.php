@@ -3,14 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\InteractsWithUserAccess;
-use App\Models\User;
 use App\Services\SiteAreaSyncService;
+use App\Support\DashboardFilterOptions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class EmployeeController extends Controller
@@ -51,6 +50,14 @@ class EmployeeController extends Controller
         $selectedDivision = $this->resolveServandaDivisionFilter($selectedCompany, $request->query('division'));
         $selectedPerPage = (int) $request->query('per_page', 10);
         $selectedToolbarArea = trim((string) $request->query('toolbar_area', ''));
+        $currentUser = $request->user();
+        $forcedAreaManager = $currentUser?->areaManagerScopeName();
+        $forcedOperationManager = $currentUser?->operationManagerScopeName();
+        $isAreaManagerScoped = filled($forcedAreaManager);
+        $isOperationManagerScoped = filled($forcedOperationManager);
+        $selectedAreaManager = $forcedAreaManager ?? trim((string) $request->query('area_manager', ''));
+        $selectedOperationManager = $forcedOperationManager ?? trim((string) $request->query('operation_manager', ''));
+        $selectedPayFrequency = trim((string) $request->query('pay_freq', ''));
 
         if (! in_array($selectedPerPage, [10, 50, 100], true)) {
             $selectedPerPage = 10;
@@ -59,7 +66,7 @@ class EmployeeController extends Controller
         $companyName = self::COMPANY_OPTIONS[$selectedCompany]['label'];
         $query = $this->newEmployeeQuery($selectedCompany, $request);
 
-        $this->applyFilters($query, $request, $selectedCompany, $selectedDivision);
+        $this->applyFilters($query, $request, $selectedCompany, $selectedDivision, $forcedAreaManager, $forcedOperationManager);
 
         $employees = $query->orderBy('nama')->get();
         $employees = $this->filterByContractStatus($employees, $request->input('contract_status', []));
@@ -77,38 +84,60 @@ class EmployeeController extends Controller
                 ->values();
         }
 
-        $employees = $this->paginateEmployees($employees, $request);
+        $divisionOptions = $this->appendEmptyFilterOption(
+            $this->siteAreaMasterQuery($selectedCompany, null)
+                ->whereNotNull('division')
+                ->where('division', '!=', '')
+                ->distinct()
+                ->orderBy('division')
+                ->pluck('division')
+        );
 
         $positions = $this->appendEmptyFilterOption(
-            $this->newEmployeeQuery($selectedCompany, $request)
-            ->whereNotNull('position')
-            ->where('position', '!=', '')
-            ->orderBy('position')
-            ->pluck('position')
-            ->map(fn ($position) => trim((string) $position))
-            ->filter(fn ($position) => filled($position))
-            ->unique(fn ($position) => strtolower($position))
-            ->values()
+            $employees
+                ->pluck('position')
+                ->map(fn ($position) => trim((string) $position))
+                ->filter(fn ($position) => filled($position))
+                ->unique(fn ($position) => strtolower($position))
+                ->sortBy(fn ($position) => strtolower($position))
+                ->values()
         );
 
         $areas = $this->appendEmptyFilterOption($selectedCompany === 'servanda'
             ? $this->getSiteAreaOptions($selectedCompany, $selectedDivision)
             : $this->getAreaOptions($selectedCompany));
         $branches = $this->appendEmptyFilterOption($this->getBranchOptions($selectedCompany, $selectedDivision));
-        $areaManagers = $this->appendEmptyFilterOption($this->getSiteAreaManagerOptions($selectedCompany, $selectedDivision, 'area_manager'));
-        $operationManagers = $this->appendEmptyFilterOption($this->getSiteAreaManagerOptions($selectedCompany, $selectedDivision, 'operation_manager'));
+        $areaManagers = $forcedAreaManager !== null
+            ? $this->appendEmptyFilterOption(collect([$forcedAreaManager]))
+            : $this->appendEmptyFilterOption($this->getSiteAreaManagerOptions($selectedCompany, $selectedDivision, 'area_manager'));
+        $operationManagers = $forcedOperationManager !== null
+            ? $this->appendEmptyFilterOption(collect([$forcedOperationManager]))
+            : $this->appendEmptyFilterOption($this->getSiteAreaManagerOptions($selectedCompany, $selectedDivision, 'operation_manager'));
 
-        $payFrequencies = collect([self::EMPTY_FILTER_VALUE, 'Harian', 'Bulanan']);
+        $payFrequencies = $this->appendEmptyFilterOption(
+            $employees
+                ->pluck('pay_freq')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn ($value) => filled($value))
+                ->values()
+        );
 
-        $statuses = collect([self::EMPTY_FILTER_VALUE, 'Aktif', 'Tidak Aktif']);
+        $statuses = $this->appendEmptyFilterOption(
+            $employees
+                ->pluck('status')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn ($value) => filled($value))
+                ->values()
+        );
 
-        $contractStatuses = collect([
-            self::EMPTY_FILTER_VALUE,
-            'Aman',
-            'Perhatian',
-            'Menjelang Berakhir',
-            'Expired',
-        ]);
+        $contractStatuses = $this->appendEmptyFilterOption(
+            $employees
+                ->map(fn ($employee) => $this->resolveContractStatus($employee->end_date))
+                ->filter(fn ($value) => filled($value))
+                ->values()
+        );
+
+        $employees = $this->paginateEmployees($employees, $request);
 
         return view('dashboard.employee', compact(
             'employees',
@@ -121,10 +150,18 @@ class EmployeeController extends Controller
             'statuses',
             'contractStatuses',
             'toolbarAreas',
+            'divisionOptions',
             'selectedCompany',
             'companyName',
             'selectedDivision',
-            'selectedPerPage'
+            'selectedAreaManager',
+            'selectedOperationManager',
+            'forcedAreaManager',
+            'forcedOperationManager',
+            'isAreaManagerScoped',
+            'isOperationManagerScoped',
+            'selectedPerPage',
+            'selectedPayFrequency'
         ));
     }
 
@@ -142,7 +179,7 @@ class EmployeeController extends Controller
         $companyName = self::COMPANY_OPTIONS[$selectedCompany]['label'];
         $companyOptions = self::COMPANY_OPTIONS;
         $branches = $this->appendEmptyFilterOption($this->getBranchOptions($selectedCompany, $siteAreaDivision));
-        $payFrequencies = collect(['Harian', 'Bulanan', 'Tanpa Data']);
+        $payFrequencies = null;
 
         $optionQuery = DB::query()
             ->fromSub($this->newEmployeeQuery($selectedCompany, $request), 'employees');
@@ -195,7 +232,21 @@ class EmployeeController extends Controller
                 'operation_manager'
             )
         );
-        $divisionOptions = collect([self::EMPTY_FILTER_VALUE, 'Cleaning', 'Security']);
+        $payFrequencies = $this->appendEmptyFilterOption(
+            (clone $optionQuery)
+                ->whereNotNull('pay_freq')
+                ->where('pay_freq', '!=', '')
+                ->orderBy('pay_freq')
+                ->pluck('pay_freq')
+        );
+        $divisionOptions = $this->appendEmptyFilterOption(
+            $this->siteAreaMasterQuery($selectedCompany, null)
+                ->whereNotNull('division')
+                ->where('division', '!=', '')
+                ->distinct()
+                ->orderBy('division')
+                ->pluck('division')
+        );
 
         return view('dashboard.employee-work-realization', compact(
             'selectedCompany',
@@ -286,23 +337,39 @@ class EmployeeController extends Controller
         $selectedCompany = $this->resolveCompanyKey($request->query('company'));
         $companyName = self::COMPANY_OPTIONS[$selectedCompany]['label'];
         $search = trim((string) $request->query('search', ''));
+        $currentUser = $request->user();
+        $forcedAreaManager = $currentUser?->areaManagerScopeName();
+        $forcedOperationManager = $currentUser?->operationManagerScopeName();
+        $isAreaManagerScoped = filled($forcedAreaManager);
+        $isOperationManagerScoped = filled($forcedOperationManager);
         $selectedDivision = $this->resolveServandaDivisionFilter($selectedCompany, $request->query('division'));
         $selectedBranch = trim((string) $request->query('branch', ''));
-        $selectedAreaManager = trim((string) $request->query('area_manager', ''));
-        $selectedOperationManager = trim((string) $request->query('operation_manager', ''));
-        $selectedStatus = trim((string) $request->query('status', ''));
+        $selectedAreaManager = $forcedAreaManager ?? trim((string) $request->query('area_manager', ''));
+        $selectedOperationManager = $forcedOperationManager ?? trim((string) $request->query('operation_manager', ''));
+        $selectedStatus = trim((string) $request->query('status', 'Aktif'));
         $perPage = (int) $request->query('per_page', 10);
 
         if (! in_array($perPage, [10, 50, 100], true)) {
             $perPage = 10;
         }
 
-        $siteAreaQuery = $this->siteAreaMasterQuery($selectedCompany, $selectedDivision)
+        $siteAreaFilterQuery = $this->siteAreaMasterQuery($selectedCompany, $selectedDivision);
+        $siteAreaQuery = (clone $siteAreaFilterQuery)
             ->when($selectedBranch !== '', fn ($query) => $query->where('branch', $selectedBranch))
             ->when($selectedAreaManager !== '', fn ($query) => $query->where('area_manager', $selectedAreaManager))
             ->when($selectedOperationManager !== '', fn ($query) => $query->where('operation_manager', $selectedOperationManager))
             ->when($selectedStatus !== '', fn ($query) => $query->where('status', $selectedStatus))
             ->orderBy('area_name');
+
+        $areaManagerOptionQuery = (clone $siteAreaFilterQuery)
+            ->when($selectedBranch !== '', fn ($query) => $query->where('branch', $selectedBranch))
+            ->when($selectedOperationManager !== '', fn ($query) => $query->where('operation_manager', $selectedOperationManager))
+            ->when($selectedStatus !== '', fn ($query) => $query->where('status', $selectedStatus));
+
+        $operationManagerOptionQuery = (clone $siteAreaFilterQuery)
+            ->when($selectedBranch !== '', fn ($query) => $query->where('branch', $selectedBranch))
+            ->when($selectedAreaManager !== '', fn ($query) => $query->where('area_manager', $selectedAreaManager))
+            ->when($selectedStatus !== '', fn ($query) => $query->where('status', $selectedStatus));
 
         $siteAreas = $siteAreaQuery
             ->paginate($perPage)
@@ -319,18 +386,26 @@ class EmployeeController extends Controller
             'selectedAreaManager' => $selectedAreaManager,
             'selectedOperationManager' => $selectedOperationManager,
             'selectedStatus' => $selectedStatus,
+            'forcedAreaManager' => $forcedAreaManager,
+            'forcedOperationManager' => $forcedOperationManager,
+            'isAreaManagerScoped' => $isAreaManagerScoped,
+            'isOperationManagerScoped' => $isOperationManagerScoped,
             'selectedPerPage' => $perPage,
-            'branchOptions' => $this->cachedBranchOptions($selectedCompany, $selectedDivision),
-            'areaManagerOptions' => $this->getUserOptionsByPositions([
-                'Area Manager (AM)',
-                'Area Commander (AC)',
-            ]),
-            'operationManagerOptions' => $this->getUserOptionsByPositions([
-                'Operation Commander (OC)',
-                'Operation Manager (OM)',
-                'Senior Operation Commander (SOC)',
-                'Senior Operation Manager (SOM)',
-            ]),
+            'divisionOptions' => $this->appendEmptyFilterOption(
+                $this->sortedDistinctOptions(clone $siteAreaFilterQuery, 'division')
+            ),
+            'branchOptions' => $this->appendEmptyFilterOption(
+                $this->sortedDistinctOptions(clone $siteAreaFilterQuery, 'branch')
+            ),
+            'areaManagerOptions' => $this->appendEmptyFilterOption(
+                $this->sortedDistinctOptions($areaManagerOptionQuery, 'area_manager')
+            ),
+            'operationManagerOptions' => $this->appendEmptyFilterOption(
+                $this->sortedDistinctOptions($operationManagerOptionQuery, 'operation_manager')
+            ),
+            'statusOptions' => $this->appendEmptyFilterOption(
+                $this->sortedDistinctOptions(clone $siteAreaFilterQuery, 'status')
+            ),
             'totalAreas' => $siteAreas->total(),
         ]);
     }
@@ -911,7 +986,7 @@ class EmployeeController extends Controller
             ->with($errorMessages === [] ? 'success' : ($successCount > 0 ? 'success' : 'error'), implode(' ', $messages));
     }
 
-    private function applyFilters($query, Request $request, string $selectedCompany, ?string $selectedDivision = null): void
+    private function applyFilters($query, Request $request, string $selectedCompany, ?string $selectedDivision = null, ?string $forcedAreaManager = null, ?string $forcedOperationManager = null): void
     {
         if ($request->filled('search')) {
             $search = $request->search;
@@ -996,7 +1071,7 @@ class EmployeeController extends Controller
             );
         }
 
-        $selectedAreaManager = trim((string) $request->input('area_manager', ''));
+        $selectedAreaManager = $forcedAreaManager ?? trim((string) $request->input('area_manager', ''));
 
         if ($selectedAreaManager !== '') {
             $areaExpression = $selectedCompany === 'servanda'
@@ -1013,7 +1088,7 @@ class EmployeeController extends Controller
             );
         }
 
-        $selectedOperationManager = trim((string) $request->input('operation_manager', ''));
+        $selectedOperationManager = $forcedOperationManager ?? trim((string) $request->input('operation_manager', ''));
 
         if ($selectedOperationManager !== '') {
             $areaExpression = $selectedCompany === 'servanda'
@@ -1030,29 +1105,34 @@ class EmployeeController extends Controller
             );
         }
 
-        $payFrequencies = collect($request->input('pay_freq', []))
-            ->filter(fn ($value) => filled($value))
-            ->values();
+        $payFrequency = trim((string) $request->input('pay_freq', ''));
 
-        if ($payFrequencies->isNotEmpty()) {
-            $query->where(function ($payQuery) use ($payFrequencies) {
-                foreach ($payFrequencies as $frequency) {
-                    $normalized = strtolower(trim((string) $frequency));
+        if ($payFrequency !== '') {
+            $normalized = strtolower($payFrequency);
 
-                    if ($normalized === 'harian') {
-                        $payQuery->orWhereRaw('LOWER(pay_freq) IN (?, ?)', ['harian', 'daily']);
-                    }
-
-                    if ($normalized === 'bulanan') {
-                        $payQuery->orWhereRaw('LOWER(pay_freq) IN (?, ?)', ['bulanan', 'monthly']);
-                    }
-
-                    if ($normalized === 'tanpa data') {
-                        $payQuery->orWhereNull('pay_freq')
-                            ->orWhereRaw("TRIM(COALESCE(pay_freq, '')) = ''")
-                            ->orWhereRaw("LOWER(TRIM(COALESCE(pay_freq, ''))) = '-'");
-                    }
+            $query->where(function ($payQuery) use ($normalized) {
+                if ($normalized === 'harian') {
+                    $payQuery->whereRaw('LOWER(pay_freq) IN (?, ?)', ['harian', 'daily']);
+                    return;
                 }
+
+                if ($normalized === 'bulanan') {
+                    $payQuery->whereRaw('LOWER(pay_freq) IN (?, ?)', ['bulanan', 'monthly']);
+                    return;
+                }
+
+                if ($normalized === 'tanpa data') {
+                    $payQuery->where(function ($emptyPayQuery) {
+                        $emptyPayQuery->whereNull('pay_freq')
+                            ->orWhereRaw("TRIM(COALESCE(pay_freq, '')) = ''")
+                            ->orWhereRaw("LOWER(TRIM(COALESCE(pay_freq, ''))) = '-'")
+                            ->orWhereRaw("LOWER(TRIM(COALESCE(pay_freq, ''))) = 'tanpa data'");
+                    });
+
+                    return;
+                }
+
+                $payQuery->whereRaw('1 = 0');
             });
         }
 
@@ -1468,32 +1548,21 @@ class EmployeeController extends Controller
     private function getBranchOptions(string $selectedCompany, ?string $division = null): Collection
     {
         return $this->siteAreaMasterQuery($selectedCompany, $division)
+            ->reorder()
             ->whereNotNull('branch')
             ->where('branch', '!=', '')
             ->distinct()
-            ->orderBy('branch')
             ->pluck('branch');
     }
 
     private function getSiteAreaManagerOptions(string $selectedCompany, ?string $division = null, string $column = 'area_manager'): Collection
     {
         return $this->siteAreaMasterQuery($selectedCompany, $division)
+            ->reorder()
             ->whereNotNull($column)
             ->where($column, '!=', '')
             ->distinct()
-            ->orderBy($column)
             ->pluck($column);
-    }
-
-    private function cachedBranchOptions(string $selectedCompany, ?string $division = null): Collection
-    {
-        $cacheKey = 'site-area:branches:' . $selectedCompany . ':' . ($division ?: 'all');
-
-        try {
-            return Cache::remember($cacheKey, now()->addMinutes(10), fn () => $this->getBranchOptions($selectedCompany, $division));
-        } catch (\Throwable $exception) {
-            return $this->getBranchOptions($selectedCompany, $division);
-        }
     }
 
     private function getServandaSiteAreaOptions(string $selectedCompany): array
@@ -1599,14 +1668,21 @@ class EmployeeController extends Controller
 
     private function appendEmptyFilterOption(Collection $options): Collection
     {
-        $normalizedOptions = $options
-            ->map(fn ($option) => trim((string) $option))
-            ->filter(fn ($option) => filled($option))
-            ->unique(fn ($option) => strtolower($option))
-            ->values();
+        return DashboardFilterOptions::normalize($options, true, self::EMPTY_FILTER_VALUE);
+    }
 
-        return collect([self::EMPTY_FILTER_VALUE])
-            ->merge($normalizedOptions->reject(fn ($option) => $option === self::EMPTY_FILTER_VALUE))
+    private function sortedDistinctOptions($query, string $column): Collection
+    {
+        return $query
+            ->reorder()
+            ->whereNotNull($column)
+            ->where($column, '!=', '')
+            ->distinct()
+            ->pluck($column)
+            ->map(fn ($value) => trim((string) $value))
+            ->filter(fn ($value) => filled($value))
+            ->unique(fn ($value) => strtolower($value))
+            ->sort(fn ($left, $right) => strcasecmp($left, $right))
             ->values();
     }
 
@@ -1977,52 +2053,6 @@ class EmployeeController extends Controller
         return max(0, $index - 1);
     }
 
-    private function getUserOptionsByPositions(array $keywords): array
-    {
-        $normalizedKeywords = collect($keywords)
-            ->map(fn ($keyword) => trim((string) $keyword))
-            ->filter()
-            ->values();
-
-        $cacheKey = 'site-area:user-options:' . md5($normalizedKeywords->implode('|'));
-
-        try {
-            return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($normalizedKeywords) {
-                return User::query()
-                    ->select('name')
-                    ->where('status', 'Aktif')
-                    ->whereNotNull('name')
-                    ->where('name', '!=', '')
-                    ->where(function ($query) use ($normalizedKeywords) {
-                        foreach ($normalizedKeywords as $keyword) {
-                            $query->orWhereJsonContains('position', $keyword);
-                        }
-                    })
-                    ->orderBy('name')
-                    ->pluck('name')
-                    ->unique()
-                    ->values()
-                    ->all();
-            });
-        } catch (\Throwable $exception) {
-            return User::query()
-                ->select('name')
-                ->where('status', 'Aktif')
-                ->whereNotNull('name')
-                ->where('name', '!=', '')
-                ->where(function ($query) use ($normalizedKeywords) {
-                    foreach ($normalizedKeywords as $keyword) {
-                        $query->orWhereJsonContains('position', $keyword);
-                    }
-                })
-                ->orderBy('name')
-                ->pluck('name')
-                ->unique()
-                ->values()
-                ->all();
-        }
-    }
-
     private function companyAreaExpression(string $selectedCompany): string
     {
         $column = $this->companyAreaColumn($selectedCompany);
@@ -2074,3 +2104,4 @@ class EmployeeController extends Controller
         }
     }
 }
+

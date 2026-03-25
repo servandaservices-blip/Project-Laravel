@@ -9,6 +9,7 @@
         ->filter(fn ($companyLabel, $companyKey) => ! $currentUser || $currentUser->canAccessCompany($companyKey))
         ->all();
     $showSettingMenu = $currentUser?->isAdministrator() ?? false;
+    $showTargetMenu = $currentUser?->canAccessTargetMenu() ?? false;
     $activeCompany = request('company', 'servanda');
 @endphp
 
@@ -261,7 +262,7 @@
         <span x-show="sidebarOpen" x-transition.opacity>Kontrak</span>
     </a>
 
-    @if ($showSettingMenu)
+    @if ($showTargetMenu)
     <div x-data="{ open: {{ request()->routeIs('settings.workday-targets.index') || request()->routeIs('settings.attendance-targets.index') ? 'true' : 'false' }} }" class="space-y-2">
         <button
             type="button"
@@ -327,7 +328,8 @@
             </a>
         </div>
     </div>
-
+    @endif
+    @if ($showSettingMenu)
     <div x-data="{ open: {{ request()->routeIs('settings.users.index') || request()->routeIs('settings.positions.index') ? 'true' : 'false' }} }" class="space-y-2">
         <button
             type="button"

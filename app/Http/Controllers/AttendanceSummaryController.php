@@ -10,6 +10,7 @@ use App\Http\Controllers\Concerns\InteractsWithUserAccess;
 use App\Services\AttendancePeriodService;
 use App\Services\AttendanceTargetStore;
 use App\Services\SiteAreaSyncService;
+use App\Support\DashboardFilterOptions;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -399,8 +400,9 @@ class AttendanceSummaryController extends Controller
             ]
         );
 
-        $siteAreaFilterOptions = $this->siteAreaFilterQuery($selectedCompany)
+        $siteAreaFilterOptions = $this->siteAreaFilterQuery($selectedCompany, $selectedDivision)
             ->select([
+                'division',
                 'branch',
                 'area_manager',
                 'operation_manager',
@@ -430,6 +432,16 @@ class AttendanceSummaryController extends Controller
             ->unique(fn ($value) => strtolower($value))
             ->sort()
             ->values();
+
+        $divisionOptions = $this->prependEmptyFilterOption(
+            $this->siteAreaFilterQuery($selectedCompany, null)
+                ->pluck('division')
+                ->map(fn ($value) => trim((string) $value))
+                ->filter(fn ($value) => filled($value))
+                ->unique(fn ($value) => strtolower($value))
+                ->sort()
+                ->values()
+        );
         return view('dashboard.workday-dashboard', [
             'selectedCompany' => $selectedCompany,
             'selectedYear' => $selectedYear,
@@ -446,6 +458,7 @@ class AttendanceSummaryController extends Controller
             'branchOptions' => $branchOptions,
             'areaManagers' => $areaManagers,
             'operationManagers' => $operationManagers,
+            'divisionOptions' => $divisionOptions,
             'bestMonth' => $bestMonth,
             'lowestMonth' => $lowestMonth,
             'workdayTargetSeries' => $workdayTargetSeries,
@@ -575,19 +588,17 @@ class AttendanceSummaryController extends Controller
         $perPage = (int) $request->query('per_page', 10);
         $search = trim((string) $request->query('search', ''));
         $attendanceRateFilter = (string) $request->query('attendance_rate_filter', '');
-        $positionFilters = collect($request->query('position', []))
-            ->when(! is_array($request->query('position')), fn ($collection) => collect([(string) $request->query('position', '')]))
-            ->map(fn ($value) => trim((string) $value))
-            ->filter(fn ($value) => filled($value))
-            ->values();
-        $payFrequencyFilter = trim((string) $request->query('pay_freq', ''));
-        $areaFilters = collect($request->query('area', []))
-            ->when(! is_array($request->query('area')), fn ($collection) => collect([(string) $request->query('area', '')]))
-            ->map(fn ($value) => trim((string) $value))
-            ->filter(fn ($value) => filled($value))
-            ->values();
-        $selectedAreaManager = trim((string) $request->query('area_manager', ''));
-        $selectedOperationManager = trim((string) $request->query('operation_manager', ''));
+        $selectedPositionFilter = $this->normalizeSelectedFilterValue($request->query('position'));
+        $selectedPayFrequencyFilter = trim((string) $request->query('pay_freq', ''));
+        $payFrequencyFilter = $selectedPayFrequencyFilter === self::EMPTY_FILTER_VALUE
+            ? 'Tanpa Data'
+            : $selectedPayFrequencyFilter;
+        $selectedAreaFilter = $this->normalizeSelectedFilterValue($request->query('area'));
+        $currentUser = $request->user();
+        $forcedAreaManager = $currentUser?->areaManagerScopeName();
+        $forcedOperationManager = $currentUser?->operationManagerScopeName();
+        $selectedAreaManager = $forcedAreaManager ?? trim((string) $request->query('area_manager', ''));
+        $selectedOperationManager = $forcedOperationManager ?? trim((string) $request->query('operation_manager', ''));
         $selectedCompany = $this->resolveCompanyKey($request->query('company'));
         $selectedDivision = $this->resolveAttendanceSummaryDivisionFilter($selectedCompany, $request->query('division'));
         $siteAreaDivision = $selectedDivision === self::EMPTY_FILTER_VALUE ? null : $selectedDivision;
@@ -596,7 +607,7 @@ class AttendanceSummaryController extends Controller
         $summaryTable = (new $summaryModel())->getTable();
         $allowedPerPage = [10, 50, 100];
         $allowedAttendanceRateFilters = ['gte_90', 'lt_90'];
-        $allowedPayFrequencyFilters = ['Harian', 'Bulanan', 'Tanpa Data'];
+        $allowedPayFrequencyFilters = ['Harian', 'Bulanan', 'Tanpa Data', self::EMPTY_FILTER_VALUE];
 
         if (! in_array($perPage, $allowedPerPage, true)) {
             $perPage = 10;
@@ -657,52 +668,30 @@ class AttendanceSummaryController extends Controller
             $baseQuery->where('attendance_rate', '<', 90);
         }
 
-        if ($positionFilters->isNotEmpty()) {
-            $positionValues = $positionFilters
-                ->reject(fn ($value) => $value === self::EMPTY_FILTER_VALUE)
-                ->values();
-            $includeEmptyPosition = $positionFilters->contains(self::EMPTY_FILTER_VALUE);
-
-            $baseQuery->where(function ($query) use ($positionValues, $includeEmptyPosition) {
-                if ($positionValues->isNotEmpty()) {
-                    $query->whereIn('employee_master.position', $positionValues->all());
-                }
-
-                if ($includeEmptyPosition) {
-                    $method = $positionValues->isNotEmpty() ? 'orWhere' : 'where';
-
-                    $query->{$method}(function ($emptyQuery) {
-                        $emptyQuery
-                            ->whereNull('employee_master.position')
-                            ->orWhereRaw("TRIM(COALESCE(employee_master.position, '')) = ''")
-                            ->orWhereRaw("LOWER(TRIM(COALESCE(employee_master.position, ''))) = '-'");
-                    });
-                }
-            });
+        if ($selectedPositionFilter !== '') {
+            if ($selectedPositionFilter === self::EMPTY_FILTER_VALUE) {
+                $baseQuery->where(function ($emptyQuery) {
+                    $emptyQuery
+                        ->whereNull('employee_master.position')
+                        ->orWhereRaw("TRIM(COALESCE(employee_master.position, '')) = ''")
+                        ->orWhereRaw("LOWER(TRIM(COALESCE(employee_master.position, ''))) = '-'");
+                });
+            } else {
+                $baseQuery->where('employee_master.position', $selectedPositionFilter);
+            }
         }
 
-        if ($areaFilters->isNotEmpty()) {
-            $areaValues = $areaFilters
-                ->reject(fn ($value) => $value === self::EMPTY_FILTER_VALUE)
-                ->values();
-            $includeEmptyArea = $areaFilters->contains(self::EMPTY_FILTER_VALUE);
-
-            $baseQuery->where(function ($query) use ($areaValues, $includeEmptyArea) {
-                if ($areaValues->isNotEmpty()) {
-                    $query->whereIn('employee_master.area', $areaValues->all());
-                }
-
-                if ($includeEmptyArea) {
-                    $method = $areaValues->isNotEmpty() ? 'orWhere' : 'where';
-
-                    $query->{$method}(function ($emptyQuery) {
-                        $emptyQuery
-                            ->whereNull('employee_master.area')
-                            ->orWhereRaw("TRIM(COALESCE(employee_master.area, '')) = ''")
-                            ->orWhereRaw("LOWER(TRIM(COALESCE(employee_master.area, ''))) = '-'");
-                    });
-                }
-            });
+        if ($selectedAreaFilter !== '') {
+            if ($selectedAreaFilter === self::EMPTY_FILTER_VALUE) {
+                $baseQuery->where(function ($emptyQuery) {
+                    $emptyQuery
+                        ->whereNull('employee_master.area')
+                        ->orWhereRaw("TRIM(COALESCE(employee_master.area, '')) = ''")
+                        ->orWhereRaw("LOWER(TRIM(COALESCE(employee_master.area, ''))) = '-'");
+                });
+            } else {
+                $baseQuery->where('employee_master.area', $selectedAreaFilter);
+            }
         }
 
         if ($selectedAreaManager !== '') {
@@ -793,36 +782,31 @@ class AttendanceSummaryController extends Controller
             $this->applyPayFrequencyFilter($baseQuery, $payFrequencyFilter);
         }
 
-        $filterOptions = DB::query()
-            ->fromSub($employeeLookupQuery, 'employee_master')
-            ->select([
-                'employee_master.position',
-                'employee_master.pay_freq',
-                'employee_master.area',
-            ])
-            ->get();
-
         $positions = $this->prependEmptyFilterOption(
-            $filterOptions
-                ->pluck('position')
-                ->map(fn ($value) => trim((string) $value))
-                ->filter(fn ($value) => filled($value))
-                ->unique(fn ($value) => strtolower($value))
-                ->sort()
-                ->values()
+            (clone $baseQuery)
+                ->select('employee_master.position')
+                ->distinct()
+                ->pluck('employee_master.position')
         );
 
         $areas = $this->prependEmptyFilterOption(
-            $filterOptions
-                ->pluck('area')
-                ->map(fn ($value) => trim((string) $value))
-                ->filter(fn ($value) => filled($value))
-                ->unique(fn ($value) => strtolower($value))
-                ->sort()
-                ->values()
+            (clone $baseQuery)
+                ->select('employee_master.area')
+                ->distinct()
+                ->pluck('employee_master.area')
         );
 
-        $siteAreaFilterOptions = $this->siteAreaFilterQuery($selectedCompany, $siteAreaDivision)
+        $siteAreaFilterOptions = $this->siteAreaFilterQuery($selectedCompany, $selectedDivision)
+            ->whereIn(
+                'site_area_master.area_name',
+                (clone $baseQuery)
+                    ->select('employee_master.area')
+                    ->distinct()
+                    ->pluck('employee_master.area')
+                    ->filter(fn ($value) => filled(trim((string) $value)))
+                    ->values()
+                    ->all()
+            )
             ->select([
                 'area_manager',
                 'operation_manager',
@@ -849,7 +833,19 @@ class AttendanceSummaryController extends Controller
                 ->values()
         );
 
-        $payFrequencies = collect(['Harian', 'Bulanan', 'Tanpa Data']);
+        $divisionOptions = $this->prependEmptyFilterOption(
+            (clone $baseQuery)
+                ->select('employee_master.division')
+                ->distinct()
+                ->pluck('employee_master.division')
+        );
+
+        $payFrequencies = $this->prependEmptyFilterOption(
+            (clone $baseQuery)
+                ->select('employee_master.pay_freq')
+                ->distinct()
+                ->pluck('employee_master.pay_freq')
+        );
 
         $summaryStats = [
             'employee_count' => (clone $baseQuery)->count(),
@@ -871,9 +867,9 @@ class AttendanceSummaryController extends Controller
             'selectedPerPage' => $perPage,
             'selectedSearch' => $search,
             'selectedAttendanceRateFilter' => $attendanceRateFilter,
-            'selectedPositionFilters' => $positionFilters,
-            'selectedPayFrequencyFilter' => $payFrequencyFilter,
-            'selectedAreaFilters' => $areaFilters,
+            'selectedPositionFilter' => $selectedPositionFilter,
+            'selectedPayFrequencyFilter' => $selectedPayFrequencyFilter,
+            'selectedAreaFilter' => $selectedAreaFilter,
             'selectedAreaManager' => $selectedAreaManager,
             'selectedOperationManager' => $selectedOperationManager,
             'selectedCompany' => $selectedCompany,
@@ -886,6 +882,9 @@ class AttendanceSummaryController extends Controller
             'areas' => $areas,
             'areaManagers' => $areaManagers,
             'operationManagers' => $operationManagers,
+            'divisionOptions' => $divisionOptions,
+            'forcedAreaManager' => $forcedAreaManager,
+            'forcedOperationManager' => $forcedOperationManager,
         ]);
     }
 
@@ -896,19 +895,17 @@ class AttendanceSummaryController extends Controller
         $perPage = (int) ($request->input('per_page', 10));
         $search = trim((string) $request->input('search', ''));
         $attendanceRateFilter = (string) $request->input('attendance_rate_filter', '');
-        $positionFilters = collect($request->input('position', []))
-            ->when(! is_array($request->input('position')), fn ($collection) => collect([(string) $request->input('position', '')]))
-            ->map(fn ($value) => trim((string) $value))
-            ->filter(fn ($value) => filled($value))
-            ->values();
-        $payFrequencyFilter = trim((string) $request->input('pay_freq', ''));
-        $areaFilters = collect($request->input('area', []))
-            ->when(! is_array($request->input('area')), fn ($collection) => collect([(string) $request->input('area', '')]))
-            ->map(fn ($value) => trim((string) $value))
-            ->filter(fn ($value) => filled($value))
-            ->values();
-        $selectedAreaManager = trim((string) $request->input('area_manager', ''));
-        $selectedOperationManager = trim((string) $request->input('operation_manager', ''));
+        $selectedPositionFilter = $this->normalizeSelectedFilterValue($request->input('position'));
+        $selectedPayFrequencyFilter = trim((string) $request->input('pay_freq', ''));
+        $payFrequencyFilter = $selectedPayFrequencyFilter === self::EMPTY_FILTER_VALUE
+            ? 'Tanpa Data'
+            : $selectedPayFrequencyFilter;
+        $selectedAreaFilter = $this->normalizeSelectedFilterValue($request->input('area'));
+        $currentUser = $request->user();
+        $forcedAreaManager = $currentUser?->areaManagerScopeName();
+        $forcedOperationManager = $currentUser?->operationManagerScopeName();
+        $selectedAreaManager = $forcedAreaManager ?? trim((string) $request->input('area_manager', ''));
+        $selectedOperationManager = $forcedOperationManager ?? trim((string) $request->input('operation_manager', ''));
         $selectedCompany = $this->resolveCompanyKey($request->input('company'));
         $selectedDivision = $this->resolveDivisionFilter($selectedCompany, $request->input('division'));
         $companyConfig = $this->companyConfig($selectedCompany);
@@ -923,9 +920,9 @@ class AttendanceSummaryController extends Controller
                     'per_page' => $perPage,
                     'search' => $search,
                     'attendance_rate_filter' => $attendanceRateFilter,
-                    'position' => $positionFilters->all(),
-                    'pay_freq' => $payFrequencyFilter,
-                    'area' => $areaFilters->all(),
+                    'position' => $selectedPositionFilter,
+                    'pay_freq' => $selectedPayFrequencyFilter,
+                    'area' => $selectedAreaFilter,
                     'area_manager' => $selectedAreaManager,
                     'operation_manager' => $selectedOperationManager,
                     'division' => $selectedDivision,
@@ -1025,9 +1022,9 @@ class AttendanceSummaryController extends Controller
                     'per_page' => $perPage,
                     'search' => $search,
                     'attendance_rate_filter' => $attendanceRateFilter,
-                    'position' => $positionFilters->all(),
-                    'pay_freq' => $payFrequencyFilter,
-                    'area' => $areaFilters->all(),
+                    'position' => $selectedPositionFilter,
+                    'pay_freq' => $selectedPayFrequencyFilter,
+                    'area' => $selectedAreaFilter,
                     'area_manager' => $selectedAreaManager,
                     'operation_manager' => $selectedOperationManager,
                     'division' => $selectedDivision,
@@ -1049,9 +1046,9 @@ class AttendanceSummaryController extends Controller
                     'per_page' => $perPage,
                     'search' => $search,
                     'attendance_rate_filter' => $attendanceRateFilter,
-                    'position' => $positionFilters->all(),
-                    'pay_freq' => $payFrequencyFilter,
-                    'area' => $areaFilters->all(),
+                    'position' => $selectedPositionFilter,
+                    'pay_freq' => $selectedPayFrequencyFilter,
+                    'area' => $selectedAreaFilter,
                     'area_manager' => $selectedAreaManager,
                     'operation_manager' => $selectedOperationManager,
                     'division' => $selectedDivision,
@@ -1062,23 +1059,32 @@ class AttendanceSummaryController extends Controller
 
     private function siteAreaFilterQuery(string $companyKey, ?string $division = null)
     {
+        $normalizedDivision = $this->normalizeNullableString($division);
+
         return DB::table(self::MASTER_SITE_AREA_TABLE . ' as site_area_master')
             ->where('site_area_master.company', $companyKey)
             ->when(
-                $companyKey === 'servanda' && $division !== null,
-                fn ($query) => $query->where('site_area_master.division', $division)
+                $companyKey === 'servanda' && $normalizedDivision !== null,
+                function ($query) use ($normalizedDivision) {
+                    if ($normalizedDivision === self::EMPTY_FILTER_VALUE) {
+                        $query->where(function ($emptyQuery) {
+                            $emptyQuery
+                                ->whereNull('site_area_master.division')
+                                ->orWhereRaw("TRIM(COALESCE(site_area_master.division, '')) = ''")
+                                ->orWhereRaw("LOWER(TRIM(COALESCE(site_area_master.division, ''))) = '-'");
+                        });
+
+                        return;
+                    }
+
+                    $query->whereRaw('LOWER(TRIM(site_area_master.division)) = ?', [strtolower($normalizedDivision)]);
+                }
             );
     }
 
     private function prependEmptyFilterOption($options)
     {
-        $normalizedOptions = collect($options)
-            ->map(fn ($option) => trim((string) $option))
-            ->filter(fn ($option) => filled($option))
-            ->reject(fn ($option) => $option === self::EMPTY_FILTER_VALUE)
-            ->values();
-
-        return collect([self::EMPTY_FILTER_VALUE])->merge($normalizedOptions)->values();
+        return DashboardFilterOptions::normalize($options, true, self::EMPTY_FILTER_VALUE);
     }
 
     private function resolveCompanyKey(?string $company): string
@@ -1176,7 +1182,7 @@ class AttendanceSummaryController extends Controller
             $query->whereRaw('LOWER(TRIM(employee_master.pay_freq)) IN (?, ?)', ['bulanan', 'monthly']);
         }
 
-        if ($normalized === 'tanpa data') {
+        if ($normalized === 'tanpa data' || $normalized === self::EMPTY_FILTER_VALUE) {
             $query->where(function ($emptyQuery) {
                 $emptyQuery
                     ->whereNull('employee_master.pay_freq')
@@ -1385,6 +1391,7 @@ class AttendanceSummaryController extends Controller
         return match ($normalized) {
             'daily', 'harian' => 'Harian',
             'monthly', 'bulanan' => 'Bulanan',
+            '-', '__empty__', '' => 'Tanpa Data',
             default => $normalized !== '' ? ucwords($normalized) : 'Tanpa Data',
         };
     }
@@ -1394,6 +1401,15 @@ class AttendanceSummaryController extends Controller
         $normalized = trim((string) $value);
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    private function normalizeSelectedFilterValue(mixed $value): string
+    {
+        if (is_array($value)) {
+            $value = collect($value)->first();
+        }
+
+        return trim((string) $value);
     }
 
     private function resolveDivisionFilter(string $companyKey, ?string $division): ?string
