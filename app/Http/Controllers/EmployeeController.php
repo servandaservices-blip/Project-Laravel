@@ -57,6 +57,10 @@ class EmployeeController extends Controller
         $isOperationManagerScoped = filled($forcedOperationManager);
         $selectedAreaManager = $forcedAreaManager ?? trim((string) $request->query('area_manager', ''));
         $selectedOperationManager = $forcedOperationManager ?? trim((string) $request->query('operation_manager', ''));
+        $selectedBranches = collect($request->input('branch', []))
+            ->filter(fn ($value) => filled($value))
+            ->values()
+            ->all();
         $selectedPayFrequency = trim((string) $request->query('pay_freq', ''));
 
         if (! in_array($selectedPerPage, [10, 50, 100], true)) {
@@ -109,7 +113,15 @@ class EmployeeController extends Controller
         $branches = $this->appendEmptyFilterOption($this->getBranchOptions($selectedCompany, $selectedDivision));
         $areaManagers = $forcedAreaManager !== null
             ? $this->appendEmptyFilterOption(collect([$forcedAreaManager]))
-            : $this->appendEmptyFilterOption($this->getSiteAreaManagerOptions($selectedCompany, $selectedDivision, 'area_manager'));
+            : $this->appendEmptyFilterOption($this->getSiteAreaManagerOptions(
+                $selectedCompany,
+                $selectedDivision,
+                'area_manager',
+                [
+                    'branch' => $selectedBranches,
+                    'operation_manager' => $selectedOperationManager !== '' ? [$selectedOperationManager] : [],
+                ]
+            ));
         $operationManagers = $forcedOperationManager !== null
             ? $this->appendEmptyFilterOption(collect([$forcedOperationManager]))
             : $this->appendEmptyFilterOption($this->getSiteAreaManagerOptions($selectedCompany, $selectedDivision, 'operation_manager'));
@@ -1555,10 +1567,33 @@ class EmployeeController extends Controller
             ->pluck('branch');
     }
 
-    private function getSiteAreaManagerOptions(string $selectedCompany, ?string $division = null, string $column = 'area_manager'): Collection
+    private function getSiteAreaManagerOptions(
+        string $selectedCompany,
+        ?string $division = null,
+        string $column = 'area_manager',
+        array $filters = []
+    ): Collection
     {
-        return $this->siteAreaMasterQuery($selectedCompany, $division)
-            ->reorder()
+        $query = $this->siteAreaMasterQuery($selectedCompany, $division)
+            ->reorder();
+
+        $branches = collect($filters['branch'] ?? [])
+            ->filter(fn ($value) => filled($value))
+            ->values();
+
+        if ($branches->isNotEmpty()) {
+            $query->whereIn('branch', $branches->all());
+        }
+
+        $operationManagers = collect($filters['operation_manager'] ?? [])
+            ->filter(fn ($value) => filled($value))
+            ->values();
+
+        if ($operationManagers->isNotEmpty()) {
+            $query->whereIn('operation_manager', $operationManagers->all());
+        }
+
+        return $query
             ->whereNotNull($column)
             ->where($column, '!=', '')
             ->distinct()

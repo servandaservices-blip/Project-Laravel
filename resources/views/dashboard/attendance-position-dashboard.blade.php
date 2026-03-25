@@ -79,6 +79,9 @@
                             :options="$areaManagers"
                             :selected="$selectedAreaManager"
                             placeholder="Semua"
+                            :locked="filled($forcedAreaManager)"
+                            :locked-value="$forcedAreaManager"
+                            :locked-label="$forcedAreaManager"
                             :field-class="$dashboardFilterFieldClass"
                             :label-class="$dashboardFilterLabelClass"
                         />
@@ -89,6 +92,9 @@
                             :options="$operationManagers"
                             :selected="$selectedOperationManager"
                             placeholder="Semua"
+                            :locked="filled($forcedOperationManager)"
+                            :locked-value="$forcedOperationManager"
+                            :locked-label="$forcedOperationManager"
                             :field-class="$dashboardFilterFieldClass"
                             :label-class="$dashboardFilterLabelClass"
                         />

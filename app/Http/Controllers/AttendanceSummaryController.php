@@ -46,9 +46,12 @@ class AttendanceSummaryController extends Controller
         $selectedYear = (int) ($request->query('year') ?? now()->year);
         $areaPerPage = (int) $request->query('area_per_page', 10);
         $selectedAreaMonth = $request->query('area_month');
+        $currentUser = $request->user();
+        $forcedAreaManager = $currentUser?->areaManagerScopeName();
+        $forcedOperationManager = $currentUser?->operationManagerScopeName();
         $selectedBranch = trim((string) $request->query('branch', ''));
-        $selectedAreaManager = trim((string) $request->query('area_manager', ''));
-        $selectedOperationManager = trim((string) $request->query('operation_manager', ''));
+        $selectedAreaManager = $forcedAreaManager ?? trim((string) $request->query('area_manager', ''));
+        $selectedOperationManager = $forcedOperationManager ?? trim((string) $request->query('operation_manager', ''));
         $selectedDivision = $this->resolveAttendanceSummaryDivisionFilter($selectedCompany, $request->query('division'));
         $attendanceTargetStore = app(AttendanceTargetStore::class);
         $attendanceTargetSeries = $attendanceTargetStore->dashboardTargets(
@@ -421,9 +424,16 @@ class AttendanceSummaryController extends Controller
                 'area_manager',
                 'operation_manager',
             ])
+            ->when($selectedBranch !== '', fn ($query) => $query->where('branch', $selectedBranch))
+            ->when($selectedAreaManager !== '', fn ($query) => $query->where('area_manager', $selectedAreaManager))
+            ->when($selectedOperationManager !== '', fn ($query) => $query->where('operation_manager', $selectedOperationManager))
             ->get();
 
-        $branchOptions = $siteAreaFilterOptions
+        $branchOptions = $this->siteAreaFilterQuery($selectedCompany, $selectedDivision)
+            ->select(['branch', 'area_manager', 'operation_manager'])
+            ->when($selectedAreaManager !== '', fn ($query) => $query->where('area_manager', $selectedAreaManager))
+            ->when($selectedOperationManager !== '', fn ($query) => $query->where('operation_manager', $selectedOperationManager))
+            ->get()
             ->pluck('branch')
             ->map(fn ($value) => trim((string) $value))
             ->filter(fn ($value) => filled($value))
@@ -431,7 +441,11 @@ class AttendanceSummaryController extends Controller
             ->sort()
             ->values();
 
-        $areaManagers = $siteAreaFilterOptions
+        $areaManagers = $this->siteAreaFilterQuery($selectedCompany, $selectedDivision)
+            ->select(['branch', 'area_manager', 'operation_manager'])
+            ->when($selectedBranch !== '', fn ($query) => $query->where('branch', $selectedBranch))
+            ->when($selectedOperationManager !== '', fn ($query) => $query->where('operation_manager', $selectedOperationManager))
+            ->get()
             ->pluck('area_manager')
             ->map(fn ($value) => trim((string) $value))
             ->filter(fn ($value) => filled($value))
@@ -439,7 +453,12 @@ class AttendanceSummaryController extends Controller
             ->sort()
             ->values();
 
-        $operationManagers = $siteAreaFilterOptions
+        $operationManagers = $this->siteAreaFilterQuery($selectedCompany, $selectedDivision)
+            ->select(['branch', 'area_manager', 'operation_manager'])
+            ->when($selectedBranch !== '', fn ($query) => $query->where('branch', $selectedBranch))
+            ->when($selectedAreaManager !== '', fn ($query) => $query->where('area_manager', $selectedAreaManager))
+            ->when($forcedOperationManager !== null, fn ($query) => $query->where('operation_manager', $forcedOperationManager))
+            ->get()
             ->pluck('operation_manager')
             ->map(fn ($value) => trim((string) $value))
             ->filter(fn ($value) => filled($value))
@@ -463,6 +482,8 @@ class AttendanceSummaryController extends Controller
             'selectedBranch' => $selectedBranch,
             'selectedAreaManager' => $selectedAreaManager,
             'selectedOperationManager' => $selectedOperationManager,
+            'forcedAreaManager' => $forcedAreaManager,
+            'forcedOperationManager' => $forcedOperationManager,
             'companyName' => $companyConfig['label'],
             'selectedAreaPerPage' => $areaPerPage,
             'selectedAreaMonth' => $selectedAreaMonth,

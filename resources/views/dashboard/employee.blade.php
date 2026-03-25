@@ -250,12 +250,7 @@
 
                         <div>
                             <label class="mb-2 block text-sm font-medium text-slate-700">Area Manager</label>
-                            @if ($isOperationManagerScoped)
-                                <input type="hidden" name="area_manager" value="">
-                                <div class="flex min-h-[50px] items-center rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 text-sm font-semibold text-slate-700 shadow-sm">
-                                    Semua
-                                </div>
-                            @elseif ($isAreaManagerScoped)
+                            @if ($isAreaManagerScoped)
                                 <input type="hidden" name="area_manager" value="{{ $selectedAreaManager }}">
                                 <div class="flex min-h-[50px] items-center rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-sky-50 px-4 text-sm font-semibold text-slate-700 shadow-sm">
                                     {{ $displayFilterValue($selectedAreaManager) }}
